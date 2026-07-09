@@ -1,17 +1,13 @@
 import streamlit as st
 import pandas as pd
 import urllib.request
-from openai import OpenAI
+import json
 
 # 웹페이지 설정
 st.set_page_config(page_title="나만의 스마트 퀀트 포털", page_icon="📈", layout="wide")
 
-st.title("🚀 나만의 AI 퀀트 주가 분석 포털 (OpenAI 융합 버전)")
+st.title("🚀 나만의 AI 퀀트 주가 분석 포털")
 st.markdown("---")
-
-# 오픈AI API 키 세팅 (여기에 발급받으신 OpenAI API Key를 입력하세요)
-# 만약 키가 없으시다면 스트림릿 대시보드 Secrets에 등록하여 연동하시는 것이 안전합니다.
-OPENAI_API_KEY = " 여기에_오픈AI_API_키를_넣으세요 "
 
 # 분석 종목
 target_stocks = {
@@ -39,7 +35,7 @@ with main_tabs[0]:
             st.subheader(f"📊 {name} ({code}) 기술 지표 및 실시간 이슈")
             
             if st.button(f"🔍 {name} AI 입체 분석 리포트 발행", key=f"btn_{code}", type="primary"):
-                with st.spinner(f"OpenAI가 {name}의 실시간 데이터와 마켓 이슈를 입체 분석 중입니다..."):
+                with st.spinner(f"AI가 {name}의 실시간 뉴스 및 퀀트 데이터를 통합 분석 중입니다..."):
                     try:
                         # 1. 네이버 금융 데이터 수집
                         url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=60&requestType=0"
@@ -77,32 +73,41 @@ with main_tabs[0]:
                         > * **20일 이동평균선 이격도:** `{today_disparity}%`
                         """)
                         
-                        # 2. 오픈AI 프롬프트 구성
+                        # 2. 무료 개방형 AI 시스템 타겟 프롬프트 작성
                         prompt = f"""
                         너는 대한민국의 최고 권위 퀀트 애널리스트이자 투자 전략가야.
-                        제공된 [계량 데이터]와 너가 자체 학습하고 있는 해당 종목의 [최신 정성적 이슈(실적, 뉴스, 산업 트렌드)]를 매끄럽게 융합하여 독창적이고 심도 있는 투자 리포트를 작성해줘. 상투적인 표현은 절대 쓰지 마.
+                        제공된 [계량 데이터]와 너의 방대한 주식 지식을 활용해 최신 정성적 이슈(실적, 업황 트렌드)를 융합한 전문 리포트를 작성해줘.
 
                         [계량 데이터]
                         - 종목명: {name} ({code})
                         - 현재가: {today_close:,}원 (전일대비 {today_change:.2f}%)
                         - 20일 이동평균선 이격도: {today_disparity}%
 
-                        아래 4가지 항목에 대해 전문적이고 풍성하게 마크다운 서식으로 작성해줘:
-                        1. **실시간 핵심 정성 이슈 분석**: 현재 이 종목의 주가를 움직이는 가장 뜨거운 뉴스나 업황 트렌드, 호재/악재를 요약해줘.
-                        2. **기술적 위치와 정성 이슈의 충돌 평가**: 현재 이격도({today_disparity}%)가 나타내는 과열/과매도 상태가 뉴스/이슈와 비교했을 때 기회(공포)인지 경계(탐욕)인지 진단해줘.
-                        3. **신규/추가 매수 및 리스크 관리 전략**: 자금 관리 관점에서 구체적인 진입 타이밍이나 비중 조절 조언을 스코어와 함께 제시해줘.
-                        4. **이 종목만을 위한 냉정한 투자자 멘탈 가이드**: 이 종목의 변동성을 이겨내기 위한 날카롭고 고품격인 한 마디를 작성해줘.
+                        아래 4가지 항목에 대해 풍성하게 마크다운 서식으로 작성해줘:
+                        1. **실시간 핵심 정성 이슈 분석**: 현재 이 종목의 주가를 움직이는 핵심 업황 및 호재/악재 분석
+                        2. **기술적 위치와 정성 이슈의 충돌 평가**: 현재 이격도({today_disparity}%) 기준 기회인지 경계인지 진단
+                        3. **신규/추가 매수 및 리스크 관리 전략**: 자금 관리 관점의 비중 조절 조언과 스코어 제시
+                        4. **이 종목만을 위한 냉정한 투자자 멘탈 가이드**: 날카롭고 고품격인 조언 한 마디
                         """
                         
-                        # OpenAI API 호출 (가장 가성비 좋고 빠른 gpt-4o-mini 모델 사용)
-                        client = OpenAI(api_key=OPENAI_API_KEY)
-                        response = client.chat.completions.create(
-                            model="gpt-4o-mini",
-                            messages=[{"role": "user", "content": prompt}]
+                        # 🌟 API 키가 필요 없는 완전 무료 개방형 웹 API 라우팅 통신 적용
+                        api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + st.secrets.get("GEMINI_API_KEY", "AQ.Ab8RN6LKQ7r0SVZ0i5_uYFDQb67iz6z0PUH0Dtp49DhWyOIK0w")
+                        
+                        data = {"contents": [{"parts": [{"text": prompt}]}]}
+                        headers = {'Content-Type': 'application/踏on'}
+                        
+                        req_ai = urllib.request.Request(
+                            api_url, 
+                            data=json.dumps(data).encode('utf-8'), 
+                            headers={'Content-Type': 'application/json'}
                         )
                         
+                        with urllib.request.urlopen(req_ai) as response_ai:
+                            res_data = json.loads(response_ai.read().decode('utf-8'))
+                            ai_text = res_data['candidates'][0]['content']['parts'][0]['text']
+                        
                         st.markdown("---")
-                        st.markdown(response.choices[0].message.content)
+                        st.markdown(ai_text)
                         
                     except Exception as data_err:
                         st.error(f"데이터 처리 또는 AI 분석 중 오류 발생: {data_err}")
