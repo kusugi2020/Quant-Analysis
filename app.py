@@ -1,17 +1,12 @@
 import streamlit as st
 import pandas as pd
 import urllib.request
-import google.generativeai as genai
 
 # 웹페이지 설정
 st.set_page_config(page_title="나만의 스마트 퀀트 포털", page_icon="📈", layout="wide")
 
 st.title("🚀 나만의 AI 퀀트 주가 분석 포털")
 st.markdown("---")
-
-# 제미나이 API 키 세팅
-GEMINI_API_KEY = "AQ.Ab8RN6LKQ7r0SVZ0i5_uYFDQb67iz6z0PUH0Dtp49DhWyOIK0w"
-genai.configure(api_key=GEMINI_API_KEY)
 
 # 분석 종목
 target_stocks = {
@@ -24,22 +19,22 @@ target_stocks = {
 }
 
 # 상단 메인 탭 분리
-main_tabs = st.tabs(["📊 실시간 AI·퀀트 통합 대시보드", "📜 기술적 분석 원리 및 역사적 통계"])
+main_tabs = st.tabs(["📊 실시간 퀀트 분석 대시보드", "📜 기술적 분석 원리 및 역사적 통계"])
 
 # ==============================================================================
-# [메인 탭 1] 실시간 AI·퀀트 통합 대시보드
+# [메인 탭 1] 실시간 퀀트 분석 대시보드
 # ==============================================================================
 with main_tabs[0]:
-    st.markdown("원하는 종목의 하위 탭을 선택한 후 [AI 입체 분석 리포트 발행] 버튼을 누르면 이격도 데이터와 최신 시장 이슈를 결합하여 분석합니다.")
+    st.markdown("원하는 종목의 하위 탭을 선택한 후 [투자 분석 리포트 발행] 버튼을 누르면 시스템이 기술적 지표를 정밀 연산합니다.")
     
     stock_tabs = st.tabs(list(target_stocks.values()))
     
     for idx, (code, name) in enumerate(target_stocks.items()):
         with stock_tabs[idx]:
-            st.subheader(f"📊 {name} ({code}) 기술 지표 및 실시간 이슈")
+            st.subheader(f"📊 {name} ({code}) 기술 지표 및 투자 전략")
             
-            if st.button(f"🔍 {name} AI 입체 분석 리포트 발행", key=f"btn_{code}", type="primary"):
-                with st.spinner(f"제미나이 AI가 {name}의 실시간 뉴스 및 퀀트 데이터를 입체 분석 중입니다..."):
+            if st.button(f"🔍 {name} 투자 분석 리포트 발행", key=f"btn_{code}", type="primary"):
+                with st.spinner(f"시스템 알고리즘이 {name}의 데이터를 정밀 분석 중입니다..."):
                     try:
                         # 1. 네이버 금융 데이터 수집
                         url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count=60&requestType=0"
@@ -77,33 +72,59 @@ with main_tabs[0]:
                         > * **20일 이동평균선 이격도:** `{today_disparity}%`
                         """)
                         
-                        # 2. 애널리스트 프롬프트
-                        prompt = f"""
-                        너는 대한민국의 최고 권위 퀀트 애널리스트이자 투자 전략가야.
-                        제공된 [계량 데이터]와 너가 가지고 있는 가장 최신의 정성적 이슈(실적, 뉴스, 산업 트렌드)를 융합하여 독창적이고 심도 있는 리포트를 작성해줘. 판에 박힌 멘트는 절대 지양해.
+                        # 2. 자체 내부 알고리즘 스코어링 및 리포트 자동 생성
+                        if today_disparity < 90:
+                            status = "🚨 **단기 강력 과매도 (낙폭과대 구간)**"
+                            strategy_desc = f"현재 {name}의 주가는 역사적 하단선인 이격도 {today_disparity}%까지 급락했습니다. 이는 기업의 본질 가치 훼손이라기보다는 단기 집단 패닉에 의한 '통계적 왜곡' 상태일 가능성이 매우 높습니다."
+                            buy_score = "⭐⭐⭐⭐⭐ (5 / 5)"
+                            buy_reason = "20일 균형 가격선과의 괴리가 극에 달해 복원 탄성력이 최대치로 압축되었습니다. 공포를 이겨내고 적극적인 분할 매수(물타기)로 대응하여 평단가를 낮추기 가장 매력적인 타이밍입니다."
+                            sell_score = "⭐ (1 / 5)"
+                            sell_reason = "과거 통계상 이 포지션에서 패닉 셀(손절)을 감행하는 것은 실익이 전혀 없으며, 단기 저점을 확인한 후 강한 기술적 반등 흐름세로 복귀하는 것을 기다리는 끈기가 절대적으로 유효합니다."
+                        elif today_disparity < 98:
+                            status = "📉 **단기 조정 및 매수 우위 구간**"
+                            strategy_desc = f"현재 {name}의 주가는 20일 이평선 아래에서 완만하게 조정을 받으며 새로운 기술적 바닥 지지선을 견고하게 다지는 단계입니다."
+                            buy_score = "⭐⭐⭐⭐ (4 / 5)"
+                            buy_reason = "단기 고점 매물이 충분히 소화된 안정적인 위치입니다. 장기 보유 관점이라면 하방 리스크가 제한적인 이 구간에서 비중을 점진적으로 적립해 나가는 전략이 스마트합니다."
+                            sell_score = "⭐⭐ (2 / 5)"
+                            sell_reason = "시장의 자잘한 변동성에 흔들려 기 보유 물량을 성급하게 털어낼 이유가 전혀 없는 관망 포지션입니다."
+                        elif today_disparity <= 103:
+                            status = "⚖️ **적정 주가 및 수렴 횡보 구간**"
+                            strategy_desc = f"현재 {name}의 주가가 한 달간의 정당한 시장 평균 가격 근처인 {today_disparity}%에 아주 긴밀하게 수렴해 있습니다."
+                            buy_score = "⭐⭐⭐ (3 / 5)"
+                            buy_reason = "단기 추세의 상방과 하방 방향성이 아직 모호하게 힘겨루기를 하는 균형 상태입니다. 무리한 공격적 매수보다는 기존 포트폴리오를 유지하는 편이 낫습니다."
+                            sell_score = "⭐⭐⭐ (3 / 5)"
+                            sell_reason = "종목 교체나 자금 리밸런싱 목적이 아니라면, 명확한 추세 돌파 신호가 출현하기 전까지 자산을 지키며 지켜보는 구간입니다."
+                        else:
+                            status = "🔥 **단기 과열 및 고점 경계 구간**"
+                            strategy_desc = f"현재 {name}의 주가는 이격도 {today_disparity}%로 용수철이 상방으로 과도하게 팽창한 단기 고점 영역에 진입했습니다."
+                            buy_score = "⭐ (1 / 5)"
+                            buy_reason = "시장 참여자들의 추격 매수와 과열 심리가 최고조에 달한 자리입니다. 이 시점에서 물타기나 신규 진입을 시도하는 것은 낙하산을 타지 않고 뛰어드는 것만큼 리스크가 큽니다."
+                            sell_score = "⭐⭐⭐⭐⭐ (5 / 5)"
+                            sell_reason = "단기 이익을 실현하기에 최고의 조건이 갖춰졌습니다. 욕심을 내려놓고 리스크 관리 차원에서 비중의 일정 부분을 분할 익절(수익 실현)하여 현금을 확보해 두십시오."
 
-                        [계량 데이터]
-                        - 종목명: {name} ({code})
-                        - 현재가: {today_close:,}원 (전일대비 {today_change:.2f}%)
-                        - 20일 이동평균선 이격도: {today_disparity}%
-
-                        아래 4가지 항목에 대해 전문적이고 풍성하게 마크다운 서식으로 작성해줘:
-                        1. **실시간 핵심 정성 이슈 분석**: 현재 이 종목의 주가를 움직이는 가장 뜨거운 뉴스, 실적 동향, 혹은 산업적 호재/악재를 구체적으로 요약해줘.
-                        2. **기술적 위치와 정성 이슈의 충돌 평가**: 현재 이격도({today_disparity}%)가 나타내는 과열/과매도 상태가 방금 분석한 뉴스/이슈와 비교했을 때 '과도한 공포(기회)'인지 아니면 '이유 있는 하락(경계)'인지 입체적으로 진단해줘.
-                        3. **신규/추가 매수 및 리스크 관리 전략**: 자금 관리 관점에서 구체적인 진입 타이밍이나 비중 조절 조언을 스코어와 함께 제시해줘.
-                        4. **이 종목만을 위한 냉정한 투자자 멘탈 가이드**: 이 종목의 고유한 변동성을 이겨내기 위한 날카롭고 고품격인 조언 한 마디를 작성해줘.
-                        """
-                        
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        response = model.generate_content(prompt)
-                        
+                        # 세련된 고품격 마크다운 포맷팅 출력
                         st.markdown("---")
-                        st.markdown(response.text)
+                        st.markdown(f"""
+                        ### 📜 {name} 정밀 퀀트 투자 보고서
+                        
+                        #### 1. 단기 위치 및 기술적 포지션 평가
+                        * **현재 시장 포지션 상태:** {status}
+                        * **입체 진단:** {strategy_desc}
+                        
+                        #### 2. 추가 매수 (물타기) 추천 점수 및 전략: {buy_score}
+                        * **구체적인 진입 지침:** {buy_reason}
+                        
+                        #### 3. 분할 매도 (익절/손절) 추천 점수 및 전략: {sell_score}
+                        * **리스크 관리 지침:** {sell_reason}
+                        
+                        #### 4. 변동성 장세 멘탈 이정표
+                        > 💡 *“과거 대한민국 대형주 시장에서 20일 이격도가 극단적으로 왜곡되었을 때, 3개월 내에 제자리(균형선)로 강하게 복귀할 확률은 예외 없이 압도적이었습니다. 무작위 소음에 흔들리지 말고 우측 '역사적 통계 백서'를 보며 숫자의 힘을 믿으십시오.”*
+                        """)
                         
                     except Exception as data_err:
                         st.error(f"데이터 처리 중 오류 발생: {data_err}")
             else:
-                st.info(f"👆 위 [ {name} AI 입체 분석 리포트 발행 ] 버튼을 누르면 분석이 시작됩니다.")
+                st.info(f"👆 위 [ {name} 투자 분석 리포트 발행 ] 버튼을 누르면 실시간 연산이 시작됩니다.")
 
 # ==============================================================================
 # [메인 탭 2] 기술적 분석 원리 및 역사적 통계
