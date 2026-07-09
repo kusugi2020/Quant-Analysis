@@ -1,451 +1,276 @@
-import streamlit as st
+"""
+이격도(Disparity) 기반 주가 반등 전략 — 통계적 검증 프레임워크
+================================================================
+
+기존 앱의 문제점:
+  - "Rebound Energy = (100-이격도)*2.5 + 미국지수*0.4 + 환율*0.2" 같은 계수가
+    통계적 근거 없이 임의로 설정됨
+  - 검증(백테스트) 없이 "D-Day 23일" 같은 확정적 숫자를 제시
+  - 표본 8개(역사적 사건)로 일반화 → 생존 편향, 과적합 위험
+
+이 스크립트가 하는 것:
+  1. 실제 과거 데이터로 "이격도가 낮을 때 정말 반등하는가?"를 대량 표본으로 검증
+  2. 벤치마크(그냥 매수 후 보유) 대비 초과수익이 통계적으로 유의한지 t-test
+  3. 부트스트랩으로 신뢰구간 산출 (점 추정치 대신 "range + 신뢰수준")
+  4. Look-ahead bias를 피하기 위한 시계열 기반 walk-forward 검증
+  5. 임의 상수 대신, 로지스틱 회귀로 계수를 데이터에서 직접 추정
+
+필요 라이브러리:
+  pip install FinanceDataReader pandas numpy scipy scikit-learn
+"""
+
+import numpy as np
 import pandas as pd
-import urllib.request
-import urllib.parse
-import re
-from datetime import datetime, timedelta
+from scipy import stats
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+import warnings
+warnings.filterwarnings("ignore")
 
-# 웹페이지 기본 설정
-st.set_page_config(page_title="불타기물타기 주린이방", page_icon="📈", layout="wide")
 
-# 메인 타이틀
-st.title("📈 불타기물타기 퀀트 룸")
-st.markdown("---")
-
-# 1. 내관심목록 딕셔너리
-my_interest_stocks = {
-    "005930": "삼성전자",
-    "000660": "SK하이닉스",
-    "005380": "현대차",
-    "009150": "삼성전기",
-    "006800": "미래에셋증권",
-    "069500": "KODEX 200"
-}
-
-# 2. KOSPI 200 핵심 기업 가나다순 대량 배열
-kospi_200_full = {
-    "HD현대마린솔루션": "443060", "HD현대미포": "010620", "HD현대삼호": "329180", "HD현대에너지솔루션": "322000", "HD현대일렉트릭": "267260",
-    "HD현대중공업": "329180", "HMM": "011200", "KCC": "002380", "KT": "030200", "KT&G": "033780",
-    "LG": "003550", "LG디스플레이": "034220", "LG에너지솔루션": "373220", "LG유플러스": "032640", "LG이노텍": "011070",
-    "LG생활건강": "051900", "LG전자": "066570", "LG화학": "051910", "LS": "006260", "LS일렉트릭": "010120",
-    "NAVER": "035420", "POSCO홀딩스": "005490", "S-Oil": "010950", "SK": "034730", "SK가스": "018670",
-    "SK네웍스": "001740", "SK바이오팜": "326030", "SK바이오사이언스": "302440", "SK스퀘어": "402340", "SK아이이테크놀로지": "361610",
-    "SK이노베이션": "096770", "SK케미칼": "285130", "SK텔레콤": "017670", "SK하이닉스": "000660", "하이브": "352820",
-    "한국가스공사": "036460", "한국앤컴퍼니": "000240", "한국전력": "015760", "한국조선해양": "009540",
-    "한국타이어앤테크놀로지": "161390", "한국항공우주": "047810", "한미약품": "128940", "한미사이언스": "008930", "한온시스템": "018880",
-    "한화": "000880", "한화갤러리아": "452260", "한화생명": "088350", "한화솔루션": "009830", "한화에어로스페이스": "012450",
-    "한화오션": "042660", "한화시스템": "272210", "현대건설": "000720", "현대글로비스": "086280", "현대두산인프라코어": "042670",
-    "현대로템": "064350", "현대모비스": "012330", "현대미포조선": "010620", "현대백화점": "069960", "현대위아": "011210",
-    "현대제철": "004020", "현대차": "005380", "현대해상": "001450", "호텔신라": "008770", "효성": "004800",
-    "효성티앤씨": "298020", "효성중공업": "298040", "효성화학": "298000", "효성첨단소재": "298050", "후성": "093370",
-    "흥국화재": "000540", "BGF리테일": "282330", "BNK금융지주": "138930", "CJ": "001040",
-    "CJ대한통운": "000120", "CJ제일제당": "097950", "DB손해보험": "005830", "DB하이텍": "000990", "DL": "000210",
-    "DL이앤씨": "375500", "GS": "078930", "GS리테일": "007070", "GS건설": "006360", "HDC현대산업개발": "294870",
-    "HL만도": "204320", "KODEX200": "069500", "LF": "093050", "OCI홀딩스": "010060", "강원랜드": "035250",
-    "고려아연": "010130", "고려제강": "002240", "금호석유": "011780", "금호타이어": "073240", "기아": "000270",
-    "기업은행": "024110", "남선알미늄": "008350", "남해화학": "025860", "넥센타이어": "002270",
-    "넷마블": "251270", "농심": "004370", "대덕전자": "353200", "대아티아이": "045390",
-    "대우건설": "047040", "대한유화": "006650", "대한항공": "003490", "동국제강": "001230",
-    "동원산업": "006040", "동서": "026960", "두산": "000150", "두산밥캣": "241560", "두산에너빌리티": "034020",
-    "두산퓨어셀": "336260", "락앤락": "115390", "롯데관광개발": "032350", "롯데쇼핑": "023530", "롯데지주": "004990",
-    "롯데칠성": "005300", "롯데케미칼": "011170", "롯데정밀화학": "004000", "메리츠금융지주": "138040", "무학": "033920",
-    "미래에셋증권": "006800", "보령": "003850", "부광약품": "003000", "빙그레": "005180",
-    "삼성물산": "028260", "삼성바이오로직스": "207940", "삼성생명": "032830", "삼성SDI": "006400",
-    "삼성엔지니어링": "028050", "삼성전기": "009150", "삼성전자": "005930", "삼성중공업": "010140", "삼성증권": "016360",
-    "삼성화재": "000810", "삼양홀딩스": "000070", "삼양식품": "003230", "서연": "007860",
-    "서울가스": "017390", "선진": "143000", "성신양회": "000450", "세방전지": "004490", "셀트리온": "068270",
-    "솔루스첨단소재": "336370", "신세계": "004170", "신한지주": "055550", "아모레퍼시픽": "090430", "아모레G": "002790",
-    "아시아나항공": "020560", "에스원": "012750", "에코프로머티": "450080", "엘앤에프": "066970",
-    "영원무역": "111770", "오리온": "271560", "우리금융지주": "316140", "유한양행": "000100", "이마트": "139480",
-    "일진하이솔루스": "271940", "제일기획": "030000", "종근당": "185750", "카카오": "035720", "카카오뱅크": "323410",
-    "카카오페이": "377300", "하이트진로": "000080", "한전KPS": "051600", "한전기술": "052690"
-}
-
-# 대시보드 컴팩트 스타일링
-st.markdown("""
-<style>
-    html, body, [class*="css"], .stMarkdown {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-    }
-    .metric-card-container {
-        background-color: #fafbfc;
-        border: 1px solid #eef2f5;
-        border-radius: 8px;
-        padding: 15px;
-        text-align: left;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-    }
-    .metric-card-title {
-        font-size: 0.88em !important;
-        color: #555555 !important;
-        font-weight: 600;
-        margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .metric-card-value {
-        font-size: 1.6em !important;
-        font-weight: 700 !important;
-        color: #2c3e50 !important;
-        line-height: 1.2;
-    }
-    .metric-card-delta {
-        font-size: 0.9em !important;
-        font-weight: 600;
-        margin-top: 4px;
-    }
-    .clean-report-box {
-        font-size: 0.9em !important;
-        line-height: 1.6 !important;
-        color: #2c3e50;
-        padding: 14px;
-        background-color: #fdfdfd;
-        border: 1px solid #eef2f5;
-        border-radius: 6px;
-        margin-top: 10px;
-    }
-    .master-predict-banner {
-        background-color: rgba(46, 204, 113, 0.06) !important;
-        border: 2px solid #27ae60 !important;
-        border-left: 8px solid #27ae60 !important;
-        border-radius: 8px;
-        padding: 20px;
-        margin: 18px 0;
-        box-shadow: 0 3px 6px rgba(46, 204, 113, 0.05);
-    }
-    .master-predict-title {
-        font-size: 1.05em !important;
-        color: #1e8449 !important;
-        font-weight: 700 !important;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .master-predict-core-value {
-        font-size: 1.65em !important;
-        font-weight: 800 !important;
-        color: #196f3d !important;
-        letter-spacing: -0.5px;
-        line-height: 1.3;
-        margin-bottom: 10px;
-    }
-    div.stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-        background-color: #f8f9fa;
-        padding: 8px;
-        border-radius: 8px;
-    }
-    div.stTabs [data-baseweb="tab-list"] button:nth-child(1) {
-        background-color: rgba(52, 152, 219, 0.12) !important;
-        border: 1px solid rgba(52, 152, 219, 0.3) !important;
-        border-radius: 6px;
-        padding: 6px 18px;
-        font-weight: bold;
-    }
-    div.stTabs [data-baseweb="tab-list"] button:nth-child(2) {
-        background-color: rgba(155, 89, 182, 0.12) !important;
-        border: 1px solid rgba(155, 89, 182, 0.3) !important;
-        border-radius: 6px;
-        padding: 6px 18px;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# 백엔드 : 실시간 글로벌 증시 데이터 웹 크롤링 파싱 알고리즘
-def fetch_global_index(ticker_symbol):
+# ----------------------------------------------------------------------
+# 1. 데이터 로딩
+# ----------------------------------------------------------------------
+def load_price_data(ticker: str, start: str, end: str) -> pd.DataFrame:
+    """
+    한국 주식은 FinanceDataReader, 해외 주식은 yfinance 등으로 교체 가능.
+    반환: Date 인덱스, Close, Volume 컬럼을 가진 DataFrame
+    """
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(ticker_symbol)}?interval=1d&range=2d"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req) as response:
-            json_text = response.read().decode('utf-8')
-            close_prices = [float(x) for x in re.findall(r'"close":\[([0-9.,\-]+)\]', json_text)[0].split(',') if x != 'null']
-            if len(close_prices) >= 2:
-                prev_c = close_prices[-2]
-                curr_c = close_prices[-1]
-                chg_pct = ((curr_c - prev_c) / prev_c) * 100
-                return round(curr_c, 2), round(chg_pct, 2)
-            elif len(close_prices) == 1:
-                return round(close_prices[0], 2), 0.0
-    except:
-        pass
-    defaults = {"^KS11": (2650.0, -0.2), "^KQ11": (850.0, +0.4), "^IXIC": (18000.0, -0.5), "^GSPC": (5450.0, -0.3), "^SOX": (5200.0, -1.2)}
-    return defaults.get(ticker_symbol, (1000.0, 0.0))
+        import FinanceDataReader as fdr
+        df = fdr.DataReader(ticker, start, end)
+        df = df.rename(columns=str.title)
+        return df[["Close", "Volume"]].dropna()
+    except ImportError as e:
+        raise ImportError(
+            "FinanceDataReader가 필요합니다: pip install finance-datareader"
+        ) from e
 
-# 현재 조회 시점의 한국 시간(KST) 연산
-kst_now = datetime.utcnow() + timedelta(hours=9)
-target_date_str = kst_now.strftime("%Y-%m-%d %H:%M")
-is_market_open = kst_now.weekday() < 5 and (9, 0) <= (kst_now.hour, kst_now.minute) <= (15, 40)
 
-# 메인 탭 분리
-main_tabs = st.tabs(["📊 종목별 AI 퀀트분석", "📜 분석기준 및 원리"])
+def generate_synthetic_data(n_days=1500, seed=42) -> pd.DataFrame:
+    """코드 검증용 합성 데이터 (실거래 데이터 없이도 로직 테스트 가능)."""
+    rng = np.random.default_rng(seed)
+    # 약간의 평균회귀 성질을 가진 랜덤워크로 생성 (실제 주가와 유사한 성질)
+    returns = rng.normal(0.0003, 0.018, n_days)
+    price = 50000 * np.exp(np.cumsum(returns))
+    dates = pd.bdate_range("2019-01-01", periods=n_days)
+    volume = rng.integers(1_000_000, 5_000_000, n_days)
+    return pd.DataFrame({"Close": price, "Volume": volume}, index=dates)
 
-# ==============================================================================
-# [메인 탭 1] 종목별 AI 퀀트분석
-# ==============================================================================
-with main_tabs[0]:
-    st.markdown(f"#### 한국 증시 주요 지수 현황판 <span style='font-size:0.8em; color:gray;'>[{target_date_str} KST]</span>", unsafe_allow_html=True)
-    kospi_val, kospi_chg = fetch_global_index("^KS11")
-    kosdaq_val, kosdaq_chg = fetch_global_index("^KQ11")
-    
-    kp_color = "#e74c3c" if kospi_chg >= 0 else "#2980b9"
-    kd_color = "#e74c3c" if kosdaq_chg >= 0 else "#2980b9"
-    
-    col_k1, col_k2 = st.columns(2)
-    with col_k1:
-        st.markdown(f'<div style="background-color:#f8f9fa; padding:10px; border-radius:6px; border-top:4px solid {kp_color}; text-align:center; font-size:0.95em;"><b>코스피 지수 (KOSPI)</b><br><span style="font-size:1.3em; font-weight:bold; color:{kp_color};">{kospi_val:,}</span> ({kospi_chg:+.2f}%)</div>', unsafe_allow_html=True)
-    with col_k2:
-        st.markdown(f'<div style="background-color:#f8f9fa; padding:10px; border-radius:6px; border-top:4px solid {kd_color}; text-align:center; font-size:0.95em;"><b>코스닥 지수 (KOSDAQ)</b><br><span style="font-size:1.3em; font-weight:bold; color:{kd_color};">{kosdaq_val:,}</span> ({kosdaq_chg:+.2f}%)</div>', unsafe_allow_html=True)
-        
-    st.markdown("<br>", unsafe_allow_html=True)
 
-    st.markdown(f"#### 미국 증시 주요 지수 현황판", unsafe_allow_html=True)
-    nasdaq_val, nasdaq_chg = fetch_global_index("^IXIC")
-    sp_val, sp_chg = fetch_global_index("^GSPC")
-    sox_val, sox_chg = fetch_global_index("^SOX")
-    
-    n_color = "#e74c3c" if nasdaq_chg >= 0 else "#2980b9"
-    s_color = "#e74c3c" if sp_chg >= 0 else "#2980b9"
-    x_color = "#e74c3c" if sox_chg >= 0 else "#2980b9"
-    
-    col_u1, col_u2, col_u3 = st.columns(3)
-    with col_u1:
-        st.markdown(f'<div style="background-color:#f8f9fa; padding:10px; border-radius:6px; border-top:4px solid {n_color}; text-align:center; font-size:0.95em;"><b>나스닥 종합 (NASDAQ)</b><br><span style="font-size:1.3em; font-weight:bold; color:{n_color};">{nasdaq_val:,}</span> ({nasdaq_chg:+.2f}%)</div>', unsafe_allow_html=True)
-    with col_u2:
-        st.markdown(f'<div style="background-color:#f8f9fa; padding:10px; border-radius:6px; border-top:4px solid {s_color}; text-align:center; font-size:0.95em;"><b>S&P 500 지수</b><br><span style="font-size:1.3em; font-weight:bold; color:{s_color};">{sp_val:,}</span> ({sp_chg:+.2f}%)</div>', unsafe_allow_html=True)
-    with col_u3:
-        st.markdown(f'<div style="background-color:#f8f9fa; padding:10px; border-radius:6px; border-top:4px solid {x_color}; text-align:center; font-size:0.95em;"><b>필라델피아 반도체 지수</b><br><span style="font-size:1.4em; font-weight:bold; color:{x_color};">{sox_val:,}</span> ({sox_chg:+.2f}%)</div>', unsafe_allow_html=True)
-    
-    st.markdown("<br><hr>", unsafe_allow_html=True)
-    
-    st.markdown("##### 🔍 종목별 분석")
-    group_choice = st.radio(
-        "그룹을 선택해 주세요:",
-        ["내관심목록", "KOSPI200"],
-        horizontal=True
+# ----------------------------------------------------------------------
+# 2. 지표 계산
+# ----------------------------------------------------------------------
+def compute_indicators(df: pd.DataFrame, ma_window: int = 20) -> pd.DataFrame:
+    df = df.copy()
+    df["MA"] = df["Close"].rolling(ma_window).mean()
+    df["Disparity"] = df["Close"] / df["MA"] * 100
+    df["Volatility20"] = df["Close"].pct_change().rolling(20).std() * np.sqrt(252)
+    df["VolumeZ"] = (
+        (df["Volume"] - df["Volume"].rolling(60).mean())
+        / df["Volume"].rolling(60).std()
     )
-    
-    selected_stock_code = ""
-    selected_stock_name = ""
-    
-    if group_choice == "내관심목록":
-        chosen_name = st.selectbox("종목을 선택하세요:", list(my_interest_stocks.values()))
-        selected_stock_code = [k for k, v in my_interest_stocks.items() if v == chosen_name][0]
-        selected_stock_name = chosen_name
+    return df
+
+
+def add_forward_returns(df: pd.DataFrame, horizons=(5, 10, 20, 40)) -> pd.DataFrame:
+    df = df.copy()
+    for h in horizons:
+        df[f"fwd_ret_{h}d"] = df["Close"].shift(-h) / df["Close"] - 1
+        df[f"fwd_win_{h}d"] = (df[f"fwd_ret_{h}d"] > 0).astype(float)
+    return df
+
+
+# ----------------------------------------------------------------------
+# 3. 부트스트랩 신뢰구간
+# ----------------------------------------------------------------------
+def bootstrap_ci(series: pd.Series, n_boot=3000, ci=0.90, seed=1):
+    rng = np.random.default_rng(seed)
+    arr = series.dropna().values
+    if len(arr) == 0:
+        return (np.nan, np.nan)
+    boot_means = rng.choice(arr, size=(n_boot, len(arr)), replace=True).mean(axis=1)
+    lo = np.percentile(boot_means, (1 - ci) / 2 * 100)
+    hi = np.percentile(boot_means, (1 + ci) / 2 * 100)
+    return lo, hi
+
+
+# ----------------------------------------------------------------------
+# 4. 핵심: 임계값 전략 백테스트 (벤치마크 대비 통계 검정 포함)
+# ----------------------------------------------------------------------
+def backtest_threshold_strategy(
+    df: pd.DataFrame,
+    threshold: float = 95.0,
+    horizons=(5, 10, 20, 40),
+    min_samples: int = 30,
+) -> pd.DataFrame:
+    """
+    '이격도가 threshold 미만인 날 매수했다면?'을 실제 표본 전체에서 검증.
+    벤치마크(전체 기간 평균 수익률) 대비 초과수익의 통계적 유의성을 t-test로 확인.
+    """
+    signal = df["Disparity"] < threshold
+    rows = []
+    for h in horizons:
+        col = f"fwd_ret_{h}d"
+        sig_ret = df.loc[signal, col].dropna()
+        all_ret = df[col].dropna()
+
+        if len(sig_ret) < min_samples:
+            rows.append({
+                "horizon_days": h, "n_samples": len(sig_ret),
+                "note": f"표본 부족(<{min_samples}) — 신뢰 불가",
+            })
+            continue
+
+        win_rate = (sig_ret > 0).mean()
+        avg_ret = sig_ret.mean()
+        bench_avg = all_ret.mean()
+        excess = avg_ret - bench_avg
+        ci_lo, ci_hi = bootstrap_ci(sig_ret)
+        t_stat, p_val = stats.ttest_ind(sig_ret, all_ret, equal_var=False)
+
+        rows.append({
+            "horizon_days": h,
+            "n_samples": int(len(sig_ret)),
+            "win_rate": round(win_rate, 3),
+            "avg_return": round(avg_ret, 4),
+            "benchmark_avg_return": round(bench_avg, 4),
+            "excess_return": round(excess, 4),
+            "return_90pct_CI": (round(ci_lo, 4), round(ci_hi, 4)),
+            "p_value_vs_benchmark": round(p_val, 4),
+            "statistically_significant(p<0.05)": bool(p_val < 0.05),
+        })
+    return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------
+# 5. Walk-forward 검증 (미래 데이터 누설 방지)
+# ----------------------------------------------------------------------
+def walk_forward_validation(
+    df: pd.DataFrame,
+    threshold: float = 95.0,
+    horizon: int = 20,
+    n_folds: int = 5,
+) -> pd.DataFrame:
+    """
+    데이터를 시간순으로 n_folds 구간으로 나눠, 각 구간을 '검증 구간'으로 사용.
+    이전 구간에서 관찰된 패턴이 다음 구간에서도 유지되는지 확인 (과적합 점검).
+    """
+    col = f"fwd_ret_{horizon}d"
+    valid = df.dropna(subset=[col, "Disparity"]).copy()
+    fold_size = len(valid) // n_folds
+    results = []
+    for i in range(n_folds):
+        start = i * fold_size
+        end = (i + 1) * fold_size if i < n_folds - 1 else len(valid)
+        fold = valid.iloc[start:end]
+        sig = fold.loc[fold["Disparity"] < threshold, col]
+        bench = fold[col]
+        if len(sig) < 5:
+            results.append({"fold": i + 1, "period": f"{fold.index[0].date()}~{fold.index[-1].date()}",
+                             "n_signal": len(sig), "win_rate": None, "avg_return": None})
+            continue
+        results.append({
+            "fold": i + 1,
+            "period": f"{fold.index[0].date()}~{fold.index[-1].date()}",
+            "n_signal": int(len(sig)),
+            "win_rate": round((sig > 0).mean(), 3),
+            "avg_return": round(sig.mean(), 4),
+            "benchmark_avg": round(bench.mean(), 4),
+        })
+    return pd.DataFrame(results)
+
+
+# ----------------------------------------------------------------------
+# 6. 임의 상수 대신 데이터 기반 계수 추정 (로지스틱 회귀)
+# ----------------------------------------------------------------------
+def fit_rebound_probability_model(
+    df: pd.DataFrame, horizon: int = 20, test_size: float = 0.3
+):
+    """
+    기존 앱: Rebound Energy = 임의 상수들의 선형합 (근거 없음)
+    개선안: '이격도, 변동성, 거래량 이상치'로 'N일 내 반등 확률'을 로지스틱 회귀로 직접 추정.
+            계수가 데이터에서 나오고, out-of-sample 정확도까지 확인 가능.
+
+    시계열이므로 train/test를 무작위 셔플이 아니라 '시간 순서'로 분리 (미래 데이터 누설 방지).
+    """
+    feat_cols = ["Disparity", "Volatility20", "VolumeZ"]
+    target_col = f"fwd_win_{horizon}d"
+    data = df.dropna(subset=feat_cols + [target_col]).copy()
+
+    split_idx = int(len(data) * (1 - test_size))
+    train, test = data.iloc[:split_idx], data.iloc[split_idx:]
+
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(train[feat_cols])
+    X_test = scaler.transform(test[feat_cols])
+    y_train, y_test = train[target_col], test[target_col]
+
+    model = LogisticRegression()
+    model.fit(X_train, y_train)
+
+    train_acc = model.score(X_train, y_train)
+    test_acc = model.score(X_test, y_test)
+    baseline_acc = max(y_test.mean(), 1 - y_test.mean())  # 항상 다수클래스 예측했을 때 정확도
+
+    coef_report = dict(zip(feat_cols, model.coef_[0].round(4)))
+
+    return {
+        "features": feat_cols,
+        "coefficients(표준화된 스케일)": coef_report,
+        "train_accuracy": round(train_acc, 3),
+        "test_accuracy(out-of-sample)": round(test_acc, 3),
+        "naive_baseline_accuracy": round(baseline_acc, 3),
+        "beats_naive_baseline": bool(test_acc > baseline_acc),
+        "train_period": f"{train.index[0].date()} ~ {train.index[-1].date()}",
+        "test_period": f"{test.index[0].date()} ~ {test.index[-1].date()}",
+    }
+
+
+# ----------------------------------------------------------------------
+# 7. 실행 예시
+# ----------------------------------------------------------------------
+def run_full_analysis(ticker: str = None, start="2015-01-01", end=None, threshold=95.0):
+    print("=" * 70)
+    if ticker:
+        print(f"종목: {ticker}  기간: {start} ~ {end or '오늘'}")
+        df = load_price_data(ticker, start, end)
     else:
-        sorted_keys = sorted(list(kospi_200_full.keys()))
-        chosen_name = st.selectbox("KOSPI 200 종목을 선택하세요:", sorted_keys)
-        selected_stock_code = kospi_200_full[chosen_name]
-        selected_stock_name = chosen_name
+        print("[검증용 합성 데이터 사용 — 실제 종목 분석 시 ticker 인자 지정]")
+        df = generate_synthetic_data()
+    print("=" * 70)
 
-    st.markdown(f"### ✨ {selected_stock_name} ({selected_stock_code}) 퀀트 리포트 룸")
-    
-    if st.button(f"🔍 {selected_stock_name} AI 입체 분석 리포트 발행", type="primary"):
-        with st.spinner("퀀트 가중치 변수 연산 중..."):
-            try:
-                # 네이버 금융 데이터 수집
-                url = f"https://fchart.stock.naver.com/sise.nhn?symbol={selected_stock_code}&timeframe=day&count=60&requestType=0"
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req) as response:
-                    xml_data = response.read().decode('utf-8', errors='ignore')
-                
-                rows = []
-                for item in xml_data.split('<item data="')[1:]:
-                    data_str = item.split('"')[0]
-                    values = data_str.split('|')
-                    if len(values) >= 5 and values[0] != "" and values[4] != "":
-                        rows.append([values[0], int(values[4])])
-                
-                if len(rows) < 20:
-                    st.error(f"{selected_stock_name} 분석 데이터가 부족합니다.")
-                else:
-                    df = pd.DataFrame(rows, columns=['Date', 'Close'])
-                    df['MA20'] = df['Close'].rolling(window=20).mean()
-                    df['Disparity20'] = (df['Close'] / df['MA20']) * 100
-                    
-                    today_data = df.iloc[-1]
-                    prev_data = df.iloc[-2]
-                    
-                    today_close = int(today_data['Close'])
-                    today_change = ((today_close - int(prev_data['Close'])) / int(prev_data['Close'])) * 100
-                    today_disparity = round(today_data['Disparity20'], 2)
-                    
-                    price_status_badge = "" if is_market_open else " <span style='color:#e74c3c; font-size:0.5em; font-weight:bold; border:1px solid #e74c3c; padding:2px 5px; border-radius:4px; margin-left:6px; vertical-align:middle;'>[전일 종가]</span>"
-                    change_sign = "+" if today_change > 0 else ""
-                    change_color = '#e74c3c' if today_change >= 0 else '#2980b9'
-                    
-                    # 🌟 주요 보정 사항: 제목을 '🔥불타기 💧물타기 레이더'로 직관성 개편
-                    if today_disparity < 90: position_label = "🚨 지금은 핵바닥! 물타기 최적기"
-                    elif today_disparity < 98: position_label = "📉 살짝 쉬어가는 중 (천천히 분할 물타기)"
-                    elif today_disparity <= 103: position_label = "⚖️ 정가 판매 중 (손대지 말고 관망)"
-                    else: position_label = "🔥 불타기 절대 금지! (슬슬 익절 준비)"
-                    
-                    # 카드 구조 일치화 및 카드 제목 변경
-                    col_card1, col_card2, col_card3 = st.columns(3)
-                    with col_card1:
-                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">💵 현재가 지표</div><div class="metric-card-value">{today_close:,}원{price_status_badge}</div><div class="metric-card-delta" style="color: {change_color};">{change_sign}{today_change:.2f}%</div></div>""", unsafe_allow_html=True)
-                    with col_card2:
-                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">📐 20일 이평선 이격도</div><div class="metric-card-value">{today_disparity}%</div><div class="metric-card-delta" style="color: gray;">기준값 100% 수렴</div></div>""", unsafe_allow_html=True)
-                    with col_card3:
-                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">🔥 불타기 💧 물타기 레이더</div><div class="metric-card-value" style="font-size:1.15em !important; padding-top:6px; color:#2e4053 !important;">{position_label}</div><div class="metric-card-delta" style="color: purple;">퀀트 레이더 추적</div></div>""", unsafe_allow_html=True)
-                    
-                    st.markdown("---")
-                    
-                    # 구글 뉴스 데이터 수집
-                    search_query = urllib.parse.quote(f"{selected_stock_name} 주가 전망 뉴스 when:1d")
-                    search_url = f"https://news.google.com/rss/search?q={search_query}&hl=ko&gl=KR&ceid=KR:ko"
-                    req_news = urllib.request.Request(search_url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req_news) as response_news:
-                        rss_data = response_news.read().decode('utf-8', errors='ignore')
-                    
-                    items = rss_data.split("<item>")[1:11] 
-                    st.markdown(f"<div class='clean-report-box'><b>📰 실시간 {selected_stock_name} 마켓 핵심 이슈 (최신 10건)</b>", unsafe_allow_html=True)
-                    
-                    news_found = False
-                    full_news_text = ""
-                    if items:
-                        for t_idx, item in enumerate(items):
-                            title_match = re.search(r"<title>(.*?)</title>", item)
-                            date_match = re.search(r"<pubDate>(.*?)</pubDate>", item)
-                            if title_match:
-                                title_text = title_match.group(1).replace("<![CDATA[", "").replace("]]>", "").split(" - ")[0]
-                                full_news_text += title_text + " "
-                                date_str = ""
-                                if date_match:
-                                    try:
-                                        parsed_date = datetime.strptime(date_match.group(1)[:25].strip(), "%a, %d %b %Y %H:%M:%S")
-                                        date_str = (parsed_date + timedelta(hours=9)).strftime("%m-%d %H:%M")
-                                    except: date_str = date_match.group(1)[:16]
-                                st.markdown(f"<span style='font-size:0.95em; display:block; margin-bottom:4px;'>{t_idx+1}. <code>{date_str}</code> {title_text}</span>", unsafe_allow_html=True)
-                                news_found = True
-                    if not news_found: st.markdown("<span style='font-size:0.9em; color:gray;'>* 현재 동기화된 실시간 뉴스 스트림이 없습니다.</span>", unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    st.markdown("---")
-                    
-                    # 글로벌 매크로 연산 결합
-                    is_fx_risk = any(k in full_news_text for k in ["환율", "원달러", "외국인", "매도세"])
-                    us_base_score = 50 + (nasdaq_chg * 10)
-                    us_impact_score = max(10, min(95, int(us_base_score)))
-                    fx_stability_score = 40 if is_fx_risk else 80
-                    rebound_energy = round((100 - today_disparity) * 2.5 + (us_impact_score * 0.4) + (fx_stability_score * 0.2), 1)
-                    rebound_energy = max(10, min(98.5, rebound_energy))
-                    
-                    us_card_bg = "rgba(46, 204, 113, 0.08)" if nasdaq_chg >= 0 else "rgba(231, 76, 60, 0.08)"
-                    fx_card_bg = "rgba(231, 76, 60, 0.08)" if is_fx_risk else "rgba(46, 204, 113, 0.08)"
-                    rb_card_bg = "rgba(52, 152, 219, 0.08)" if today_disparity < 95 else "rgba(155, 89, 182, 0.08)"
-                    
-                    col_m1, col_m2, col_m3 = st.columns(3)
-                    with col_m1:
-                        st.markdown(f"""<div style="background-color: {us_card_bg}; padding: 12px; border-radius: 6px; border-left: 4px solid #34495e; font-size:0.9em;"><b style="color:#2c3e50;">미국 증시 연동값</b><br><span style="font-size:1.4em; font-weight:bold; color:#2c3e50;">{us_impact_score}</span> / 100</div>""", unsafe_allow_html=True)
-                    with col_m2:
-                        st.markdown(f"""<div style="background-color: {fx_card_bg}; padding: 12px; border-radius: 6px; border-left: 4px solid #c0392b; font-size:0.9em;"><b style="color:#2c3e50;">환율 수급 안정도</b><br><span style="font-size:1.4em; font-weight:bold; color:#2c3e50;">{fx_stability_score}</span> / 100</div>""", unsafe_allow_html=True)
-                    with col_m3:
-                        st.markdown(f"""<div style="background-color: {rb_card_bg}; padding: 12px; border-radius: 6px; border-left: 4px solid #2980b9; font-size:0.9em;"><b style="color:#2c3e50;">추세 회귀 강도</b><br><span style="font-size:1.4em; font-weight:bold; color:#2980b9;">{rebound_energy}%</span></div>""", unsafe_allow_html=True)
-                    
-                    # 주가 예측 결과 강조형 전용 하이라이트 마스터 배너 렌더링
-                    if today_disparity < 95:
-                        base_days = int((100 - today_disparity) * 2.8)
-                        if nasdaq_chg >= 0: base_days -= 5  
-                        else: base_days += 4               
-                        if is_fx_risk: base_days += 4       
-                        d_day_result = max(5, min(45, base_days))
-                        
-                        predict_html = f"""
-                        <div class='master-predict-banner'>
-                            <div class='master-predict-title'>🎯 퀀트 레이더 추세 전환 스코어 가이드</div>
-                            <div class='master-predict-core-value'>주가 반등 및 추세 전환 예상 시점: <span style='color:#27ae60; text-decoration: underline;'>D-Day {d_day_result}일 내외</span> (약 {round(d_day_result/5, 1)}주일 이내 반등 전환 유력)</div>
-                            <span style='font-size:0.95em; color:#444; display:block;'>• <b>알고리즘 추정 근거:</b> 현재 축적된 국내 종목의 가격 괴감율({today_disparity}%)과 연동된 글로벌 미국 마감 지수 수치를 종합 백엔드에서 정밀 역산한 결과물입니다. 이 기간 동안 무리한 손절 대신 균등액 물타기를 통해 평단가를 하향 조율하는 전략이 통계적으로 최상의 방어율을 보장합니다.</span>
-                        </div>
-                        """
-                    elif today_disparity <= 103:
-                        predict_html = """
-                        <div class='master-predict-banner' style='background-color: rgba(127, 140, 141, 0.06) !important; border: 2px solid #7f8c8d !important; border-left: 8px solid #7f8c8d !important;'>
-                            <div class='master-predict-title' style='color:#7f8c8d !important;'>⚖️ 퀀트 레이더 추세 전환 스코어 가이드</div>
-                            <div class='master-predict-core-value' style='color:#34495e !important;'>주가 방향성 전망: 당분간 단기 균형 수렴 및 박스권 횡보 흐름</div>
-                            <span style='font-size:0.95em; color:#444; display:block;'>• <b>알고리즘 추정 근거:</b> 현재 시세가 20일 균형선과의 괴리율이 최소화된 평형 가격대에 안착해 있습니다. 섣부른 추격 매수나 물타기보다는 차주 발표될 매크로 경제 지표 공시 수급에 맞춰 비중 조절 대기 포지션이 정석입니다.</span>
-                        </div>
-                        """
-                    else:
-                        predict_html = """
-                        <div class='master-predict-banner' style='background-color: rgba(230, 126, 34, 0.06) !important; border: 2px solid #e67e22 !important; border-left: 8px solid #e67e22 !important;'>
-                            <div class='master-predict-title' style='color:#e67e22 !important;'>🔥 퀀트 레이더 추세 전환 스코어 가이드</div>
-                            <div class='master-predict-core-value' style='color:#922b21 !important;'>주가 방향성 전망: 단기 오버슈팅에 따른 기술적 하락조정(눌림목) 리스크 경계</div>
-                            <span style='font-size:0.95em; color:#444; display:block;'>• <b>알고리즘 추정 근거:</b> 기술적 이격도가 103% 한계선을 초과하여 시장 참여자들의 단기 탐욕적 추격 매수세가 최고조에 달한 오버 영역입니다. 추가 불타기는 절대 금지이며, 수익금 보전을 위해 점진적 비중 축소(분할 익절)를 이행해야 하는 구간입니다.</span>
-                        </div>
-                        """
-                    st.markdown(predict_html, unsafe_allow_html=True)
-                    
-                    st.markdown(f"""
-                    <div class="clean-report-box">
-                        <b>📜 {selected_stock_name} 데이터 분석 요약 서머리</b><br>
-                        • <b>포지션 진단 :</b> {selected_stock_name}의 현재 이격도는 {today_disparity}% 수준으로 계산되었습니다.<br>
-                        • <b>마켓 가이드 :</b> 본 퀀트 룸은 외부 소음에 뇌동매매하지 않고 오직 숫자의 통계적 복원력을 추종합니다.
-                    </div>
-                    """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"데이터 로드 에러: {e}")
+    df = compute_indicators(df)
+    df = add_forward_returns(df)
 
-# ==============================================================================
-# [메인 탭 2] 분석기준 및 원리
-# ==============================================================================
-with main_tabs[1]:
-    st.markdown("<div class='clean-report-box'>", unsafe_allow_html=True)
-    st.header("📊 퀀트 연산 엔진 설계 백서 및 다차원 알고리즘 명세")
-    st.markdown("본 퀀트 포털은 시장의 군중 심리와 노이즈 가득한 실시간 뉴스 스트림을 정량 데이터로 치환하여, 통계적 가격 왜곡 현상과 글로벌 매크로 인덱스 가중치를 결합 연산하는 독립적인 시스템입니다.")
-    
-    st.markdown("---")
-    
-    st.subheader("📐 1. 20일 이동평균선 이격도(Disparity)의 수학적 정의")
-    st.markdown("이격도는 당일의 현재 종가가 한 달간(20거래일)의 정당한 시장 가격 균형점으로부터 위아래로 얼마나 비정상적으로 멀어져 있는가를 판단하는 **복원 탄성력 측정 공식**입니다.")
-    st.latex(r"\text{Disparity (\%)} = \left( \frac{\text{Price}_{\text{today}}}{\frac{1}{20}\sum_{i=1}^{20} \text{Price}_{i}} \right) \times 100")
-    
-    st.markdown("""
-    * **과매도 한계 임계점 (95% 미만 영역):** 통계학적으로 95% 이하 영역에 주가가 위치하게 되면, 기업 고유의 청산 가치 및 자산 대비 매력도가 극대화되어 메이저 수급 주체(기관/외인)의 프로그램 저가 매수세가 가동되는 '수학적 복귀 자리'로 판정합니다.
-    * **과열 한계 임계점 (103% 초과 영역):** 기술적 지표 및 모멘텀에 뇌동매매하는 개인의 추격 매수세가 정점에 도달하여, 아주 작은 차익 실현 매물 출현에도 주가가 균형 가격대로 팽창 후 수축 회귀하는 조정 고위험 포지션으로 해석합니다.
-    """)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.subheader("⚙️ 2. 글로벌 매크로 가중치 산출 및 다차원 융합 공식")
-    st.markdown("국내 대형주는 글로벌 거시 경제 흐름에 종속되는 특성을 보입니다. 본 엔진은 백엔드에서 실시간으로 미국 3대 인덱스를 파싱하여 가변 스코어링 시스템을 구동합니다.")
-    st.code("""
-    [종합 기술적 반등 에너지 방정식]
-    Rebound Energy (%) = [ (100 - 국내 이격도) × 2.5 ] + (미국 시장 지수 스코어 × 0.4) + (환율 수급 안정도 × 0.2)
-    """, language="python")
-    st.markdown("""
-    * **미국 지수 스코어링 (Max 95점):** 야후 파이낸스 실시간 API를 통해 나스닥 종합 지수(`^IXIC`)의 등락률을 1차 크롤링합니다. 등락 강도에 `비례상수(10)`를 연산 가중치로 결합하여 기술주 중심의 외국인 매수 연속성을 계량화합니다.
-    * **환율 수급 안정도 (Max 80점 / Min 40점):** 구글 실시간 뉴스 원문에서 10대 핵심 키워드(`'환율'`, `'원달러'`, `'외국인 매도세'`)를 마이닝합니다. 해당 단어 유출 트래픽 급증 시 외인 이탈 가속 리스크 패널티를 차등 반영하여 하방 경직성 지수를 자동 보정합니다.
-    """)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.subheader("🎯 3. 가변형 주가 추세 전환 타임라인(D-Day) 예측 메커니즘")
-    st.markdown("단순히 차트 지표만 나열하는 한계를 극복하기 위해, 본 엔진은 가격 왜곡에 따른 역사적 평균 회복 거래일에 실시간 글로벌 변수 보정치를 역산하여 예측 타임라인을 도출합니다.")
-    st.code("""
-    [추세 예측 가변 디데이 공식]
-    최종 예상 D-Day = [ (100 - 국내 이격도) × 2.8 ] - (미국 시장 인센티브 일수) + (환율 매크로 페널티 일수)
-    """, language="python")
-    st.markdown("""
-    * **미국 시장 훈풍 인센티브 (-5일):** 실시간 나스닥 지수가 양의 방향(`>= 0`)을 가리킬 경우, 미국 기술주 온기 유입에 따라 대중의 심리적 복원 속도가 가속화되어 기술적 반등 도달 시점을 **5거래일 단축** 보정합니다.
-    * **미국 시장 하락 페널티 (+4일):** 글로벌 매크로 투매 동조화 현상 발발 시, 저가 매수세의 진입이 유보되는 수급 소강상태를 계산하여 바닥 소화 기간을 **4거래일 연장**합니다.
-    * **환율 및 수급 리스크 페널티 (+4일):** 원달러 환율 불안정에 따른 프로그램 차익 매도 물량 충격을 흡수하기 위한 방어벽 형성 기간 **4거래일을 추가 누적**하여 정확도를 정밀 제어합니다.
-    """)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.subheader("📊 4. 대한민국 대형 우량주 역대 대폭락장과 이격도 회귀 데이터 일람")
-    df_history_expanded = pd.DataFrame([
-        {"역사적 패닉 사건": "2000년 IT 닷컴 버블 붕괴 쇼크", "공포의 최저점 이격도": "68% ~ 74%", "당시 시장 대중 심리 상태": "인터넷 벤처 기업 거품 파산, 코스닥 역대 최악 투매 폭락", "이격도 도달 이후 역사적 실제 결과": "지나친 맹신 붕괴 후 우량 펀더멘탈 대형주 위주로 외국인 수급 복귀, 6개월 내 균형 가격대 복귀"},
-        {"역사적 패닉 사건": "2008년 리먼 브라더스 금융위기", "공포의 최저점 이격도": "76% ~ 81%", "당시 시장 대중 심리 상태": "글로벌 금융 시스템 마비, 전 세계 주식 시장 종말론 대두", "이격도 도달 이후 역사적 실제 결과": "공포의 정점 통과 후 정확히 3개월 만에 20일선 복귀, 1년 뒤 주가 평균 +45% 대반등 성공"},
-        {"역사적 패닉 사건": "2011년 미국 국가 신용등급 강등 사태", "공포의 최저점 이격도": "82% ~ 84%", "당시 시장 심리 상태": "미국 디폴트 우려 및 글로벌 더블딥(재침체) 패닉 투매", "이격도 도달 이후 역사적 실제 결과": "이격도 최저점 찍은 후 정확히 24거래일 만에 이격도 100% 균형선 완벽 회복 완료"},
-        {"역사적 사건": "2018년 미·중 글로벌 무역전쟁 보복 관세 쇼크", "공포의 최저점 이격도": "85% ~ 88%", "당시 시장 대중 심리 상태": "G2 전면 전쟁에 따른 수출 공급망 붕괴 공포, 반도체 급락", "이격도 도달 이후 역사적 실제 결과": "무차별 급락 중에도 이격도 85%선 도달 시마다 기술적 대량 저가 매수세 유입, 15% 안팎 기술적 반등 유출"},
-        {"역사적 패닉 사건": "2020년 코로나19 세계적 팬데믹 (3월)", "공포의 최저점 이격도": "74% ~ 79%", "당시 시장 대중 심리 상태": "글로벌 경제 셧다운 공포, 코스피 서킷브레이커 연속 발동", "이격도 도달 이후 역사적 실제 결과": "역대 최악의 이격도 과매도 기록 후, 4월 한 달 만에 20일선 안착 및 동학개미 대세 상승장 시발점 돌입"},
-        {"역사적 패닉 사건": "2022년 글로벌 고금리 기조 · 인플레 쇼크", "공포의 최저점 이격도": "84% ~ 86%", "당시 시장 대중 심리 상태": "반도체 업황 종말론 대두, 삼성전자/하이닉스 연일 신저가 갱신", "이격도 도달 이후 역사적 실제 결과": "계단식 우하향 장세 속에서도 이격도 85% 한계선 터치 시 마다 예외 없이 단기 10~15% 수준의 강력 반등 출현"},
-        {"역사적 패닉 사건": "2023년 미국 실리콘밸리은행(SVB) 파산 패닉", "공포의 최저점 이격도": "88% ~ 91%", "당시 시장 대중 심리 상태": "미 중소형 은행 연쇄 뱅크런 및 뱅킹 시스템 위기 공포", "이격도 도달 이후 역사적 실제 결과": "미국 정부의 신속한 유동성 공급책 발표와 동시에 15거래일 만에 이격도 복귀 상방 돌파 성공"},
-        {"역사적 패닉 사건": "역대 미국 대선 및 거시 매크로 불확실성 국면", "공포의 최저점 이격도": "87% ~ 90%", "당시 시장 대중 심리 상태": "글로벌 통상 압박 지형 변화 및 금리 인하 지연 스트레스 노이즈", "이격도 도달 이후 역사적 실제 결과": "정치적 리스크가 해소되는 선거 마감 기점으로 과매도 구간 통과, 평균 3주 이내 수급 턴어라운드 완성"}
-    ])
-    st.table(df_history_expanded)
-    st.markdown("</div>", unsafe_allow_html=True)
+    print(f"\n총 관측일수: {len(df)}일 (이동평균 계산으로 앞 20일 제외)")
+
+    print(f"\n[1] 이격도 {threshold}% 미만 신호의 실제 성과 (벤치마크 대비 유의성 검정)")
+    bt = backtest_threshold_strategy(df, threshold=threshold)
+    print(bt.to_string(index=False))
+
+    print(f"\n[2] Walk-forward 검증 (20일 보유 기준, 5개 구간) — 시기별로 패턴이 유지되는지 확인")
+    wf = walk_forward_validation(df, threshold=threshold, horizon=20, n_folds=5)
+    print(wf.to_string(index=False))
+
+    print(f"\n[3] 로지스틱 회귀 기반 반등확률 모형 (임의 상수 대신 데이터로 계수 추정)")
+    model_report = fit_rebound_probability_model(df, horizon=20)
+    for k, v in model_report.items():
+        print(f"  - {k}: {v}")
+
+    print("\n" + "=" * 70)
+    print("해석 시 주의:")
+    print("- win_rate/평균수익률이 벤치마크보다 높아도 p_value >= 0.05면 우연일 가능성 배제 못함")
+    print("- test_accuracy가 naive_baseline보다 낮으면, 모형이 '무조건 다수쪽 예측'만도 못한 것")
+    print("- 신뢰구간이 넓으면(표본 부족/변동성 큼) 확정적 숫자로 제시하면 안 됨")
+    print("=" * 70)
+
+    return {"backtest": bt, "walk_forward": wf, "model": model_report}
+
+
+if __name__ == "__main__":
+    # 예시 1: 합성 데이터로 로직 검증
+    run_full_analysis()
+
+    # 예시 2: 실제 종목 분석 (FinanceDataReader 설치 후 주석 해제)
+    # run_full_analysis(ticker="005930", start="2015-01-01", threshold=95.0)  # 삼성전자
