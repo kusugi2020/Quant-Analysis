@@ -1,7 +1,7 @@
 """
 이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-리뉴얼 포인트: 좌측 메뉴 순서 최적화 및 하단 텍스트 마크다운 종료 오류 완벽 수정
+리뉴얼 포인트: 그래프 및 표 내 수익률 % 표시 정교화 및 인공지능 상세 리포트 포맷팅 에러 수정
 """
 
 import streamlit as st
@@ -64,7 +64,7 @@ def backtest_threshold_strategy(df: pd.DataFrame, threshold: float, horizons=(5,
         all_ret = df[col].dropna()
 
         if len(sig_ret) < min_samples:
-            rows.append({"보유기간": f"{h}일", "신호발생": len(sig_ret), "승률": 0, "전략수익률": 0, "시장수익률": 0, "초과수익률": 0, "최악의경우": 0, "최선의경우": 0, "판정": "데이터 부족", "p_val": 1.0})
+            rows.append({"보유기간": f"{h}일", "신호발생": len(sig_ret), "승률": 0.0, "전략수익률": 0.0, "시장수익률": 0.0, "초과수익률": 0.0, "최악의경우": 0.0, "최선의경우": 0.0, "판정": "데이터 부족", "p_val": 1.0})
             continue
 
         win_rate = (sig_ret > 0).mean()
@@ -98,7 +98,7 @@ def walk_forward_validation(df: pd.DataFrame, threshold: float, horizon=20, n_fo
         fold = valid.iloc[start:end]
         sig = fold.loc[fold["Disparity"] < threshold, col]
         if len(sig) < 5:
-            results.append({"구간": f"{i+1}구간", "전략수익률": 0})
+            results.append({"구간": f"{i+1}구간", "전략수익률": 0.0})
             continue
         results.append({
             "구간": f"{i+1}구간 ({fold.index[0].year}년)",
@@ -120,11 +120,19 @@ def fit_rebound_probability_model(df: pd.DataFrame, horizon=20, test_size=0.3):
     model = LogisticRegression()
     model.fit(X_train, train[target_col])
     
+    # 가중치 딕셔너리 내부의 np.float64 값들을 순수 파이썬 float형태로 강제 변환하여 리포트 에러 방지
+    raw_coefs = model.coef_[0]
+    formatted_coefs = {
+        "이격도 (Disparity)": float(round(raw_coefs[0], 4)),
+        "20일 변동성 (Volatility)": float(round(raw_coefs[1], 4)),
+        "거래량 이상치 (Volume Z-score)": float(round(raw_coefs[2], 4))
+    }
+    
     return {
-        "coef": dict(zip(["이격도 (Disparity)", "20일 변동성 (Volatility)", "거래량 이상치 (Volume Z-score)"], model.coef_[0].round(4))),
-        "train_acc": model.score(X_train, train[target_col]),
-        "test_acc": model.score(X_test, test[target_col]),
-        "baseline_acc": max(test[target_col].mean(), 1 - test[target_col].mean()),
+        "coef": formatted_coefs,
+        "train_acc": float(model.score(X_train, train[target_col])),
+        "test_acc": float(model.score(X_test, test[target_col])),
+        "baseline_acc": float(max(test[target_col].mean(), 1 - test[target_col].mean())),
         "train_p": f"{train.index[0].date()}~{train.index[-1].date()}",
         "test_p": f"{test.index[0].date()}~{test.index[-1].date()}"
     }
@@ -157,23 +165,21 @@ start_date = st.sidebar.text_input("📅 3. 조회 시작일", value="2015-01-01
 # 실행 버튼
 execute_button = st.sidebar.button("🚀 분석 시작하기", use_container_width=True)
 
-# 데이터 로딩 프로세스
-is_data_loaded = False
-if ticker_code and execute_button:
-    try:
-        raw_df = load_price_data(ticker_code, start_date, None)
-        is_data_loaded = True
-    except Exception:
-        st.sidebar.error("⚠️ 올바른 종목코드를 입력해 주세요. (예: 미래에셋증권 006800, 삼성전자 005930)")
+# 데이터 로딩 실행부
+try:
+    raw_df = load_price_data(ticker_code, start_date, None)
+    processed_df = compute_indicators(raw_df)
+    processed_df = add_forward_returns(processed_df)
+    is_data_loaded = True
+except Exception:
+    st.sidebar.error("⚠️ 올바른 종목코드를 입력해 주세요. (예: 미래에셋증권 006800, 삼성전자 005930)")
+    is_data_loaded = False
 
 # ----------------------------------------------------------------------
 # 메뉴 1: 투자 판단 분석
 # ----------------------------------------------------------------------
 with menu_tab1:
     if is_data_loaded:
-        processed_df = compute_indicators(raw_df)
-        processed_df = add_forward_returns(processed_df)
-        
         current_disparity = processed_df['Disparity'].iloc[-1]
         total_signals = (processed_df['Disparity'] < input_threshold).sum()
         bt_res = backtest_threshold_strategy(processed_df, input_threshold)
@@ -217,7 +223,7 @@ with menu_tab1:
             
         # 투자자 맞춤형 슬라이더 가이드 문구
         st.markdown("")
-        with st.expander("💡현재 이격도 설정 기준 해설", expanded=True):
+        with st.expander("💡 <b>현재 이격도 설정 기준 해설</b>", expanded=True):
             st.markdown(f"""
             * **이격도 설정:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, 최근 20일 평균 가격선 대비 **-{100-input_threshold:.1f}% 이상 급락한 지점**에서만 진입하겠다는 의미입니다.
             * **최근 이격도 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
@@ -244,14 +250,21 @@ with menu_tab1:
         
         st.markdown("---")
         
-        # 전략 기대 성과 표 및 그래프
+        # 전략 기대 성과 표 구성 데이터 수정 (출력용 포맷 맵핑)
         st.markdown("### 🎯 1단계 분석 결과: 이 자리에 사면 내 계좌는 어떻게 될까?")
-        st.dataframe(bt_res[["보유기간", "신호발생", "승률", "전략수익률", "시장수익률", "초과수익률", "판정"]], use_container_width=True, hide_index=True)
+        display_bt = bt_res.copy()
+        display_bt["승률"] = display_bt["승률"].apply(lambda x: f"{x}%")
+        display_bt["전략수익률"] = display_bt["전략수익률"].apply(lambda x: f"{x}%")
+        display_bt["시장수익률"] = display_bt["시장수익률"].apply(lambda x: f"{x}%")
+        display_bt["초과수익률"] = display_bt["초과수익률"].apply(lambda x: f"{x}%")
         
-        st.markdown("#### 📈 무작위로 살 때 vs 과매도 신호에 살 때 수익률 비교 그래프")
+        st.dataframe(display_bt[["보유기간", "신호발생", "승률", "전략수익률", "시장수익률", "초과수익률", "판정"]], use_container_width=True, hide_index=True)
+        
+        # 💡 요 청 사 항: 무작위 vs 과매도 비교 바차트에 변수명 및 단위 명시 (%)
+        st.markdown("#### 📈 무작위로 살 때 vs 과매도 신호에 살 때 수익률 비교 그래프 (%)")
         graph_df = pd.DataFrame({
-            "시장 그냥 보유 시 (벤치마크)": bt_res["시장수익률"].values,
-            "이격도 과매도 전략 사용 시": bt_res["전략수익률"].values
+            "시장 그냥 보유 시 수익률 (%)": bt_res["시장수익률"].values,
+            "이격도 과매도 전략 수익률 (%)": bt_res["전략수익률"].values
         }, index=bt_res["보유기간"])
         st.bar_chart(graph_df)
 
@@ -260,31 +273,42 @@ with menu_tab1:
         # 리스크 관리 차트 및 과거 영속성 검증
         col_chart1, col_chart2 = st.columns(2)
         with col_chart1:
-            st.markdown("### 🛡️ 2단계 분석 결과: 물리더라도 얼마나 깨질까? (리스크 범위)")
+            st.markdown("### 🛡️ 2단계 분석 결과: 물리더라도 얼마나 깨질까? 리스크 범위 (%)")
             ci_graph_df = pd.DataFrame({
-                "최악의 경우 (손실 하단)": bt_res["최악의경우"].values,
-                "최선의 경우 (이익 상단)": bt_res["최선의경우"].values
+                "최악의 손실 하단 (%)": bt_res["최악의경우"].values,
+                "최선의 이익 상단 (%)": bt_res["최선의경우"].values
             }, index=bt_res["보유기간"])
             st.bar_chart(ci_graph_df)
             
         with col_chart2:
-            st.markdown("### ⏳ 3단계 분석 결과: 옛날에도 고르게 잘 먹혔을까?")
+            st.markdown("### ⏳ 3단계 분석 결과: 옛날에도 고르게 잘 먹혔을까? 구간수익률 (%)")
             wf_res = walk_forward_validation(processed_df, input_threshold)
-            st.bar_chart(wf_res.set_index("구간"))
             
+            # 구간수익률 차트 범례 보강
+            display_wf = wf_res.copy().rename(columns={"전략수익률": "구간별 전략수익률 (%)"})
+            st.bar_chart(display_wf.set_index("구간"))
+            
+        # ==================================================================
+        # 🤖 부록 리포트 포맷팅 넘파이 객체 오류 제거 및 완성
+        # ==================================================================
         st.markdown("---")
         st.markdown("### 🤖 부록: 인공지능(로지스틱 회귀) 모델 상세 성적표")
         model_res = fit_rebound_probability_model(processed_df)
+        
         c1, c2 = st.columns(2)
         with c1:
-            st.write(f"- 알고리즘 예측 정확도: `{model_res['test_acc']*100:.1f}%` *(무조건 한쪽으로 찍는 기본선: {model_res['baseline_acc']*100:.1f}%)*")
+            st.markdown("**🎯 모형 예측 성적**")
+            st.write(f"- 알고리즘 예측 정확도: **{model_res['test_acc']*100:.1f}%** *(무조건 한쪽으로 찍는 기본선: {model_res['baseline_acc']*100:.1f}%)*")
         with c2:
-            st.write(f"- 영향력 지표 가중치: `{model_res['coef']}`")
+            st.markdown("**📐 영향력 지표 가중치 (수치 변환 완료)**")
+            for feat, val in model_res["coef"].items():
+                st.write(f"- {feat}: `{val}`")
+                
     else:
         st.info("👈 왼쪽 패널에서 [1. 종목코드], [2. 이격도 기준], [3. 시작일]을 지정한 뒤 [🚀 분석 시작하기] 버튼을 눌러주세요.")
 
 # ----------------------------------------------------------------------
-# 메뉴 2: 분석 원리 (⚠️ 마크다운 닫기 오류 완벽 수정 완료)
+# 메뉴 2: 분석 원리
 # ----------------------------------------------------------------------
 with menu_tab2:
     st.markdown("### 📚 시스템 작동 원리 및 수학적 근거 상세 설명")
@@ -311,7 +335,7 @@ with menu_tab2:
     """)
 
 # ----------------------------------------------------------------------
-# 메뉴 3: 사용 방법 (⚠️ 마크다운 닫기 오류 완벽 수정 완료)
+# 메뉴 3: 사용 방법
 # ----------------------------------------------------------------------
 with menu_tab3:
     st.markdown("### 📖 퀀트 플랫폼 기반 실전 투자 가이드라인")
