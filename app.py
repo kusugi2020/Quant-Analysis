@@ -141,7 +141,7 @@ def fit_rebound_probability_model(df: pd.DataFrame, horizon=20, test_size=0.3):
 # ----------------------------------------------------------------------
 st.markdown("""
     <div style="background-color:#0F172A; padding:24px; border-radius:12px; margin-bottom:25px; border-left: 8px solid #3B82F6;">
-        <h1 style="color:white; margin:0; font-size:30px; font-weight:700;">📈 대시보드로 보는 주가 반등 과학적 검증기</h1>
+        <h1 style="color:white; margin:0; font-size:30px; font-weight:700;">📈 언제 살지 몰라서 만든 사이트</h1>
         <p style="color:#94A3B8; margin:8px 0 0 0; font-size:15px;">오늘 가격 기준으로 살지 말지, 인공지능과 통계 데이터가 즉시 판정해 드립니다.</p>
     </div>
 """, unsafe_allow_html=True)
