@@ -152,7 +152,7 @@ else:
     is_data_loaded = True
 
 # ----------------------------------------------------------------------
-# 메뉴 1: 실시간 분석 계기판 및 '오늘 사면 어떻게 될까?' 추가
+# 메뉴 1: 실시간 분석 계기판 및 '오늘 사면 어떻게 될까?'
 # ----------------------------------------------------------------------
 with menu_tab1:
     if is_data_loaded and execute_button:
@@ -160,7 +160,18 @@ with menu_tab1:
         processed_df = add_forward_returns(processed_df)
         
         current_disparity = processed_df['Disparity'].iloc[-1]
+        
+        # ⚠️ 중요: st.metric이나 신호등 판정에서 쓰기 전에 이 위치에서 먼저 계산해 줍니다!
+        total_signals = (processed_df['Disparity'] < input_threshold).sum()
+        
         bt_res = backtest_threshold_strategy(processed_df, input_threshold)
+        
+        # ==================================================================
+        # 🔥 신설 메뉴: 오늘 사면 어떻게 될까? (최종 신호등 판정 엔진)
+        # ==================================================================
+        st.markdown("### 🚨 [오늘의 투자 최종 신호등 판정]")
+        
+        # ... (이하 신호등 조건문 및 st.metric 렌더링 코드 그대로 유지) ...
         
         # ==================================================================
         # 🔥 신설 메뉴: 오늘 사면 어떻게 될까? (최종 신호등 판정 엔진)
