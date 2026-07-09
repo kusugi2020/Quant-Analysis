@@ -1,7 +1,5 @@
-# 코드 최상단에 추가
-import streamlit as st
-
-이격도(Disparity) 기반 주가 반등 전략 — 통계적 검증 프레임워크
+"""
+이격도(Disparity) 기반 주가 반등 전략 - 통계적 검증 프레임워크
 ================================================================
 
 기존 앱의 문제점:
@@ -18,9 +16,10 @@ import streamlit as st
   5. 임의 상수 대신, 로지스틱 회귀로 계수를 데이터에서 직접 추정
 
 필요 라이브러리:
-  pip install FinanceDataReader pandas numpy scipy scikit-learn
+  pip install FinanceDataReader pandas numpy scipy scikit-learn streamlit
 """
 
+import streamlit as st
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -192,9 +191,6 @@ def fit_rebound_probability_model(
     """
     기존 앱: Rebound Energy = 임의 상수들의 선형합 (근거 없음)
     개선안: '이격도, 변동성, 거래량 이상치'로 'N일 내 반등 확률'을 로지스틱 회귀로 직접 추정.
-            계수가 데이터에서 나오고, out-of-sample 정확도까지 확인 가능.
-
-    시계열이므로 train/test를 무작위 셔플이 아니라 '시간 순서'로 분리 (미래 데이터 누설 방지).
     """
     feat_cols = ["Disparity", "Volatility20", "VolumeZ"]
     target_col = f"fwd_win_{horizon}d"
@@ -213,7 +209,7 @@ def fit_rebound_probability_model(
 
     train_acc = model.score(X_train, y_train)
     test_acc = model.score(X_test, y_test)
-    baseline_acc = max(y_test.mean(), 1 - y_test.mean())  # 항상 다수클래스 예측했을 때 정확도
+    baseline_acc = max(y_test.mean(), 1 - y_test.mean())
 
     coef_report = dict(zip(feat_cols, model.coef_[0].round(4)))
 
@@ -230,55 +226,78 @@ def fit_rebound_probability_model(
 
 
 # ----------------------------------------------------------------------
-# 7. Streamlit 실행 및 시각화 화면 구성
+# 7. Streamlit 대시보드 화면 구성 구현
 # ----------------------------------------------------------------------
 def run_full_analysis_streamlit(ticker: str = None, start="2015-01-01", end=None, threshold=95.0):
     st.title("📈 이격도 기반 주가 반등 전략 검증")
     
     if ticker:
-        st.subheader(f"🔍 종목: {ticker} (기간: {start} ~ {end or '오늘'})")
+        st.subheader(f"🔍 분석 대상: {ticker} (기간: {start} ~ {end or '오늘'})")
         df = load_price_data(ticker, start, end)
     else:
-        st.subheader("🤖 검증용 합성 데이터 분석")
+        st.subheader("🤖 검증용 합성 데이터 분석 모드")
         df = generate_synthetic_data()
 
     df = compute_indicators(df)
     df = add_forward_returns(df)
 
-    st.info(f"**총 관측일수:** {len(df)}일 (이동평균 계산으로 앞 20일 제외)")
+    st.info(f"📊 **총 관측 데이터:** {len(df)}일 (이동평균 산출을 위한 초기 20일 제외)")
 
-    # [1] 임계값 전략 백테스트 결과
-    st.markdown("### [1] 이격도 미만 신호의 실제 성과 (벤치마크 대비 유의성 검정)")
+    # [1] 임계값 전략 백테스트
+    st.markdown("### 1️⃣ 이격도 임계값 미만 진호의 실제 성과")
+    st.caption("벤치마크(전체 기간 평균 수익률) 대비 초과수익 및 t-test 유의성 검정 결과")
     bt = backtest_threshold_strategy(df, threshold=threshold)
-    st.dataframe(bt) # 웹 화면에 깔끔한 테이블로 출력
+    st.dataframe(bt, use_container_width=True)
 
-    # [2] Walk-forward 검증 결과
-    st.markdown("### [2] Walk-forward 검증 (20일 보유 기준, 5개 구간)")
+    # [2] Walk-forward 검증
+    st.markdown("### 2️⃣ 시계열 구조 Walk-forward 검증")
+    st.caption("과적합을 방지하기 위해 데이터를 순차적 구간으로 나누어 패턴의 영속성 확인 (20일 보유 기준)")
     wf = walk_forward_validation(df, threshold=threshold, horizon=20, n_folds=5)
-    st.dataframe(wf)
+    st.dataframe(wf, use_container_width=True)
 
-    # [3] 로지스틱 회귀 리포트
-    st.markdown("### [3] 로지스틱 회귀 기반 반등확률 모형 결과")
+    # [3] 로지스틱 회귀
+    st.markdown("### 3️⃣ 데이터 기반 반등 확률 추정 모형 (로지스틱 회귀)")
+    st.caption("임의 상수를 배제하고 이격도, 변동성, 거래량 Z-Score 변수를 바탕으로 머신러닝 학습 수행")
     model_report = fit_rebound_probability_model(df, horizon=20)
     
-    for k, v in model_report.items():
-        st.write(f"- **{k}**: {v}")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**📊 평가 메트릭**")
+        st.write(f"- 학습 정확도 (Train Accuracy): `{model_report['train_accuracy']}`")
+        st.write(f"- 검증 정확도 (Test Accuracy): `{model_report['test_accuracy(out-of-sample)']}`")
+        st.write(f"- 기준 정확도 (Baseline Accuracy): `{model_report['naive_baseline_accuracy']}`")
+        st.write(f"- 기준 모델 대비 우수 여부: `{'✅ 통과' if model_report['beats_naive_baseline'] else '❌ 미달'}`")
+    
+    with col2:
+        st.markdown("**📐 표준화 계수 (Coefficients)**")
+        for feat, coef in model_report["coefficients(표준화된 스케일)"].items():
+            st.write(f"- `{feat}`: `{coef}`")
+            
+    st.caption(f"📅 학습 기간: {model_report['train_period']} / 검증 기간: {model_report['test_period']}")
 
-    # 주의사항 경고창
+    # 오해 소지 방지를 위한 안내 문구
     st.warning("""
-    **⚠️ 해석 시 주의 사항**
-    - `win_rate`나 평균수익률이 벤치마크보다 높아도 `p_value >= 0.05`면 우연일 가능성을 배제할 수 없습니다.
-    - `test_accuracy`가 `naive_baseline`보다 낮으면 모형의 예측 가치가 없는 상태입니다.
-    - 신뢰구간(CI)이 너무 넓다면 확정적인 숫자로 맹신해서는 안 됩니다.
+    **⚠️ 통계 해석 시 유의사항**
+    - `win_rate`나 평균수익률이 벤치마크보다 높게 관측되더라도, `p_value >= 0.05`라면 우연에 의한 결과일 확률을 배제할 수 없습니다.
+    - `test_accuracy`가 `naive_baseline`보다 낮은 경우, 단순히 무조건 상승 혹은 무조건 하락으로 찍는 기본 모델보다 성능이 떨어짐을 의미합니다.
+    - 신뢰구간(CI)의 범위가 지나치게 넓다면 과거 변동성이 매우 컸던 것이므로 확정적인 기대치를 신뢰해서는 안 됩니다.
     """)
 
+
 if __name__ == "__main__":
-    # 사이드바에서 모드 선택 가능하도록 간단한 UI 추가
-    st.sidebar.header("설정")
-    mode = st.sidebar.radio("데이터 선택", ["합성 데이터 테스트", "실제 종목 분석(삼성전자)"])
+    # 스트림릿 사이드바 제어 패널
+    st.sidebar.header("🕹️ 제어 패널")
+    data_mode = st.sidebar.selectbox("데이터 소스 선택", ["합성 데이터 (테스트용)", "국내 주식 시장 (실거래 데이터)"])
     
-    if mode == "합성 데이터 테스트":
-        run_full_analysis_streamlit()
+    input_threshold = st.sidebar.slider("이격도 매수 임계값 (%)", min_value=85.0, max_value=100.0, value=95.0, step=0.5)
+    
+    if data_mode == "합성 데이터 (테스트용)":
+        run_full_analysis_streamlit(threshold=input_threshold)
     else:
-        # FinanceDataReader가 정상 설치되어 있어야 작동합니다.
-        run_full_analysis_streamlit(ticker="005930", start="2015-01-01", threshold=95.0)
+        ticker_code = st.sidebar.text_input("종목코드 입력 (6자리)", value="005930")
+        start_date = st.sidebar.text_input("조회 시작일", value="2015-01-01")
+        
+        if st.sidebar.button("분석 실행"):
+            run_full_analysis_streamlit(ticker=ticker_code, start=start_date, threshold=input_threshold)
+        else:
+            st.info("👈 왼쪽 패널에서 종목코드 확인 후 [분석 실행] 버튼을 눌러주세요.")
