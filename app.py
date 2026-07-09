@@ -276,20 +276,20 @@ with main_tabs[0]:
                     change_sign = "+" if today_change > 0 else ""
                     change_color = '#e74c3c' if today_change >= 0 else '#2980b9'
                     
-                    # 🌟 주요 보정 사항: 주린이 맞춤형 직관적 조건부 텍스트 매칭 (고정 인프라)
+                    # 🌟 주요 보정 사항: 제목을 '🔥불타기 💧물타기 레이더'로 직관성 개편
                     if today_disparity < 90: position_label = "🚨 지금은 핵바닥! 물타기 최적기"
                     elif today_disparity < 98: position_label = "📉 살짝 쉬어가는 중 (천천히 분할 물타기)"
                     elif today_disparity <= 103: position_label = "⚖️ 정가 판매 중 (손대지 말고 관망)"
                     else: position_label = "🔥 불타기 절대 금지! (슬슬 익절 준비)"
                     
-                    # 카드 구조 일치화
+                    # 카드 구조 일치화 및 카드 제목 변경
                     col_card1, col_card2, col_card3 = st.columns(3)
                     with col_card1:
                         st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">💵 현재가 지표</div><div class="metric-card-value">{today_close:,}원{price_status_badge}</div><div class="metric-card-delta" style="color: {change_color};">{change_sign}{today_change:.2f}%</div></div>""", unsafe_allow_html=True)
                     with col_card2:
                         st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">📐 20일 이평선 이격도</div><div class="metric-card-value">{today_disparity}%</div><div class="metric-card-delta" style="color: gray;">기준값 100% 수렴</div></div>""", unsafe_allow_html=True)
                     with col_card3:
-                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">🛡️ 현재 기술 포지션</div><div class="metric-card-value" style="font-size:1.15em !important; padding-top:6px; color:#2e4053 !important;">{position_label}</div><div class="metric-card-delta" style="color: purple;">퀀트 레이더 추적</div></div>""", unsafe_allow_html=True)
+                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">🔥 불타기 💧 물타기 레이더</div><div class="metric-card-value" style="font-size:1.15em !important; padding-top:6px; color:#2e4053 !important;">{position_label}</div><div class="metric-card-delta" style="color: purple;">퀀트 레이더 추적</div></div>""", unsafe_allow_html=True)
                     
                     st.markdown("---")
                     
