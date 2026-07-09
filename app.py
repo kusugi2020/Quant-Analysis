@@ -61,7 +61,7 @@ kospi_200_full = {
     "카카오페이": "377300", "하이트진로": "000080", "한전KPS": "051600", "한전기술": "052690"
 }
 
-# 대시보드 컴팩트 스타일링 및 최종 하이라이트 배너 디자인 설계 주입
+# 대시보드 컴팩트 스타일링
 st.markdown("""
 <style>
     html, body, [class*="css"], .stMarkdown {
@@ -105,8 +105,6 @@ st.markdown("""
         border-radius: 6px;
         margin-top: 10px;
     }
-    
-    /* 🌟 정 PM님 요구사항 : 반등 예정 시점 전용 하이라이트 인포그래픽 엠블럼 박스 고도화 디자인 */
     .master-predict-banner {
         background-color: rgba(46, 204, 113, 0.06) !important;
         border: 2px solid #27ae60 !important;
@@ -133,7 +131,6 @@ st.markdown("""
         line-height: 1.3;
         margin-bottom: 10px;
     }
-    
     div.stTabs [data-baseweb="tab-list"] {
         gap: 12px;
         background-color: #f8f9fa;
@@ -279,18 +276,20 @@ with main_tabs[0]:
                     change_sign = "+" if today_change > 0 else ""
                     change_color = '#e74c3c' if today_change >= 0 else '#2980b9'
                     
-                    if today_disparity < 90: position_label = "🚨 단기 강력 과매도"
-                    elif today_disparity < 98: position_label = "📉 단기 조정 우위"
-                    elif today_disparity <= 103: position_label = "⚖️ 공정 가치 수렴"
-                    else: position_label = "🔥 단기 고점 과열"
+                    # 🌟 주요 보정 사항: 주린이 맞춤형 직관적 조건부 텍스트 매칭 (고정 인프라)
+                    if today_disparity < 90: position_label = "🚨 지금은 핵바닥! 물타기 최적기"
+                    elif today_disparity < 98: position_label = "📉 살짝 쉬어가는 중 (천천히 분할 물타기)"
+                    elif today_disparity <= 103: position_label = "⚖️ 정가 판매 중 (손대지 말고 관망)"
+                    else: position_label = "🔥 불타기 절대 금지! (슬슬 익절 준비)"
                     
+                    # 카드 구조 일치화
                     col_card1, col_card2, col_card3 = st.columns(3)
                     with col_card1:
                         st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">💵 현재가 지표</div><div class="metric-card-value">{today_close:,}원{price_status_badge}</div><div class="metric-card-delta" style="color: {change_color};">{change_sign}{today_change:.2f}%</div></div>""", unsafe_allow_html=True)
                     with col_card2:
                         st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">📐 20일 이평선 이격도</div><div class="metric-card-value">{today_disparity}%</div><div class="metric-card-delta" style="color: gray;">기준값 100% 수렴</div></div>""", unsafe_allow_html=True)
                     with col_card3:
-                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">🛡️ 현재 기술 포지션</div><div class="metric-card-value">{position_label}</div><div class="metric-card-delta" style="color: purple;">퀀트 레이더 추적</div></div>""", unsafe_allow_html=True)
+                        st.markdown(f"""<div class="metric-card-container"><div class="metric-card-title">🛡️ 현재 기술 포지션</div><div class="metric-card-value" style="font-size:1.15em !important; padding-top:6px; color:#2e4053 !important;">{position_label}</div><div class="metric-card-delta" style="color: purple;">퀀트 레이더 추적</div></div>""", unsafe_allow_html=True)
                     
                     st.markdown("---")
                     
@@ -346,7 +345,7 @@ with main_tabs[0]:
                     with col_m3:
                         st.markdown(f"""<div style="background-color: {rb_card_bg}; padding: 12px; border-radius: 6px; border-left: 4px solid #2980b9; font-size:0.9em;"><b style="color:#2c3e50;">추세 회귀 강도</b><br><span style="font-size:1.4em; font-weight:bold; color:#2980b9;">{rebound_energy}%</span></div>""", unsafe_allow_html=True)
                     
-                    # 🌟 주요 개편 파트: 주가 예측 결과 강조형 전용 하이라이트 마스터 배너 렌더링
+                    # 주가 예측 결과 강조형 전용 하이라이트 마스터 배너 렌더링
                     if today_disparity < 95:
                         base_days = int((100 - today_disparity) * 2.8)
                         if nasdaq_chg >= 0: base_days -= 5  
@@ -444,7 +443,7 @@ with main_tabs[1]:
         {"역사적 패닉 사건": "2011년 미국 국가 신용등급 강등 사태", "공포의 최저점 이격도": "82% ~ 84%", "당시 시장 심리 상태": "미국 디폴트 우려 및 글로벌 더블딥(재침체) 패닉 투매", "이격도 도달 이후 역사적 실제 결과": "이격도 최저점 찍은 후 정확히 24거래일 만에 이격도 100% 균형선 완벽 회복 완료"},
         {"역사적 사건": "2018년 미·중 글로벌 무역전쟁 보복 관세 쇼크", "공포의 최저점 이격도": "85% ~ 88%", "당시 시장 대중 심리 상태": "G2 전면 전쟁에 따른 수출 공급망 붕괴 공포, 반도체 급락", "이격도 도달 이후 역사적 실제 결과": "무차별 급락 중에도 이격도 85%선 도달 시마다 기술적 대량 저가 매수세 유입, 15% 안팎 기술적 반등 유출"},
         {"역사적 패닉 사건": "2020년 코로나19 세계적 팬데믹 (3월)", "공포의 최저점 이격도": "74% ~ 79%", "당시 시장 대중 심리 상태": "글로벌 경제 셧다운 공포, 코스피 서킷브레이커 연속 발동", "이격도 도달 이후 역사적 실제 결과": "역대 최악의 이격도 과매도 기록 후, 4월 한 달 만에 20일선 안착 및 동학개미 대세 상승장 시발점 돌입"},
-        {"역사적 패닉 사건": "2022년 글로벌 고금리 기조 · 인플레 쇼크", "공포의 최저점 이격도": "84% ~ 86%", "당시 시장 대중 심리 상태": "반도체 업황 종말론 대두, 삼성전자/하이닉일 신저가 갱신", "이격도 도달 이후 역사적 실제 결과": "계단식 우하향 장세 속에서도 이격도 85% 한계선 터치 시 마다 예외 없이 단기 10~15% 수준의 강력 반등 출현"},
+        {"역사적 패닉 사건": "2022년 글로벌 고금리 기조 · 인플레 쇼크", "공포의 최저점 이격도": "84% ~ 86%", "당시 시장 대중 심리 상태": "반도체 업황 종말론 대두, 삼성전자/하이닉스 연일 신저가 갱신", "이격도 도달 이후 역사적 실제 결과": "계단식 우하향 장세 속에서도 이격도 85% 한계선 터치 시 마다 예외 없이 단기 10~15% 수준의 강력 반등 출현"},
         {"역사적 패닉 사건": "2023년 미국 실리콘밸리은행(SVB) 파산 패닉", "공포의 최저점 이격도": "88% ~ 91%", "당시 시장 대중 심리 상태": "미 중소형 은행 연쇄 뱅크런 및 뱅킹 시스템 위기 공포", "이격도 도달 이후 역사적 실제 결과": "미국 정부의 신속한 유동성 공급책 발표와 동시에 15거래일 만에 이격도 복귀 상방 돌파 성공"},
         {"역사적 패닉 사건": "역대 미국 대선 및 거시 매크로 불확실성 국면", "공포의 최저점 이격도": "87% ~ 90%", "당시 시장 대중 심리 상태": "글로벌 통상 압박 지형 변화 및 금리 인하 지연 스트레스 노이즈", "이격도 도달 이후 역사적 실제 결과": "정치적 리스크가 해소되는 선거 마감 기점으로 과매도 구간 통과, 평균 3주 이내 수급 턴어라운드 완성"}
     ])
