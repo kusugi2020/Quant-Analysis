@@ -4,7 +4,7 @@ import urllib.request
 
 st.set_page_config(page_title="AI 퀀트 투자 리포트", page_icon="📈", layout="wide")
 
-st.title("🚀 나만의 AI 퀀트 주가 분석 포털")
+st.title("🚀 JJM 퀀트지표 분석기(매수매도타이밍)")
 st.markdown("원하는 종목의 탭을 선택한 후 [투자 분석 리포트 발행] 버튼을 누르면 알고리즘이 기술적 지표를 분석합니다.")
 st.markdown("---")
 
@@ -13,7 +13,9 @@ target_stocks = {
     "000660": "SK하이닉스",
     "005380": "현대차",
     "069500": "KODEX 200 (시장지수 ETF)",
-    "066800": "미래에셋증권"
+    "006800": "미래에셋증권",
+    "005380": "현대차",
+    "495850": "KODEX 코리아밸류업"
 }
 
 tabs = st.tabs(list(target_stocks.values()))
