@@ -143,7 +143,7 @@ st.markdown("""
     <div style="background-color:#0F172A; padding:24px; border-radius:12px; margin-bottom:25px; border-left: 8px solid #3B82F6;">
         <h1 style="color:white; margin:0; font-size:30px; font-weight:700;">📈 언제 사야 할지 몰라서 만든 사이트</h1>
         <p style="color:#94A3B8; margin:8px 0 0 0; font-size:15px;">오늘 가격 기준으로 살지 말지, 얼만큼 떨어질때 사야 할 지 몰라서 AI와 통계 데이터를 비벼서 만들었습니다.</p>
-        <p style="color:#94A3B8; margin:8px 0 0 0; font-size:15px;">최근 20일 간 하락율이 10%면 이격도 90%이며, 90%든 85%든 본인이 몇 % 떨어면 사볼만 하겠다 했을 때 과거 통계를 기반으로 수익에 성공할 확률과 보유기간별 수익률을 예상해 보는 사이트입니다.</p>
+        <p style="color:#94A3B8; margin:8px 0 0 0; font-size:15px;">최근 20일 간 하락율이 10%면 이격도 90%이며, 투자자 본인이 몇 % 떨어지면 사볼만 하겠다 설정하고 실제 투자하게 될 때 과거 통계를 기반으로 투자성공율과 보유기간별 수익율을 예상해 보는 사이트입니다.</p>
     </div>
 """, unsafe_allow_html=True)
 
