@@ -213,7 +213,7 @@ with menu_tab1:
             """, unsafe_allow_html=True)
             
         st.markdown("")
-        with st.expander("💡 <b>현재 이격도 설정 기준 해설</b>", expanded=True):
+        with st.expander("💡 현재 이격도 설정 기준 해설", expanded=True):
             st.markdown(f"""
             * **이격도 설정:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, 최근 20일 평균 가격선 대비 **-{100-input_threshold:.1f}% 이상 급락한 지점**에서만 진입하겠다는 의미입니다.
             * **최근 이격도 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
@@ -287,7 +287,7 @@ with menu_tab1:
         # 하단 해설 가이드 세션 보강 (수학적 원리 가이드 장착)
         st.markdown("")
         st.info("""
-        ## **💡영향력 지표 가중치란?**
+        **💡영향력 지표 가중치란?**
         
         분석가의 주관을 배제하고 과거 10년 치 주가 데이터가 직접 채점한 '진짜 반등의 핵심 열쇠'입니다. 체급이 다른 지표들을 공평하게 비교하기 위해 Z-Score 표준화 변환 후 서열을 매긴 상대적 점수입니다.
         
