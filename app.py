@@ -155,7 +155,7 @@ ticker_code = st.sidebar.text_input("📌 1. 종목코드 입력 (6자리)", val
 input_threshold = st.sidebar.slider("📉 2. 매수 이격도 기준 설정 (%)", min_value=85.0, max_value=100.0, value=93.0, step=0.5)
 st.sidebar.caption("💡 **이격도란?** 최근 20일 평균 가격에서 얼마나 폭락했는지 정하는 기준입니다. (ex. 20일 평균가가 1만 원일 때, 10% 떨어진 9천 원에 매수하겠다면 이격도 **90%** 설정)")
 start_date = st.sidebar.text_input("📅 3. 조회 시작일", value="2015-01-01")
-st.sidebar.caption("💡 **조회시작일이란?** 언제부터의 데이터까지 계산에 포함시킬 것인지 정해보세요)")
+st.sidebar.caption("💡 **조회시작일이란?** 언제부터의 데이터까지 계산에 포함시킬 것인지 정해보세요")
 execute_button = st.sidebar.button("🚀 분석 시작하기", use_container_width=True)
 
 # 데이터 로딩 실행부
