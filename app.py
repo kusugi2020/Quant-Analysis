@@ -3,6 +3,7 @@ import pandas as pd
 import urllib.request
 import urllib.parse
 import re
+from datetime import datetime, timedelta
 
 # 웹페이지 설정
 st.set_page_config(page_title="나만의 스마트 퀀트 포털", page_icon="📈", layout="wide")
@@ -74,7 +75,7 @@ with main_tabs[0]:
                         > * **20일 이동평균선 이격도:** `{today_disparity}%`
                         """)
                         
-                        # 2. 🌟 구글 실시간 뉴스/이슈 데이터 실시간 검색 및 스크래핑
+                        # 2. 구글 실시간 뉴스/이슈 데이터 실시간 검색 및 스크래핑
                         search_query = urllib.parse.quote(f"{name} 주가 전망 뉴스")
                         search_url = f"https://news.google.com/rss/search?q={search_query}&hl=ko&gl=KR&ceid=KR:ko"
                         
@@ -82,14 +83,38 @@ with main_tabs[0]:
                         with urllib.request.urlopen(req_news) as response_news:
                             rss_data = response_news.read().decode('utf-8', errors='ignore')
                         
-                        # 최신 뉴스 타이틀 4개 추출
-                        titles = re.findall(r"<title>(.*?)</title>", rss_data)[1:5]
+                        # item 단위로 분할하여 타이틀과 날짜 동시 추출
+                        items = rss_data.split("<item>")[1:5]
                         
-                        st.markdown("### 📰 구글 실시간 주요 마켓 이슈 캐싱")
-                        if titles:
-                            for t_idx, title in enumerate(titles):
-                                st.markdown(f"{t_idx+1}. ⁃ {title}")
-                        else:
+                        # 맨 위 구글 뉴스를 명확한 대형 제목 스타일(##)로 처리
+                        st.markdown(f"## 📰 구글 실시간 {name} 마켓 핵심 이슈")
+                        
+                        news_found = False
+                        if items:
+                            for t_idx, item in enumerate(items):
+                                title_match = re.search(r"<title>(.*?)</title>", item)
+                                date_match = re.search(r"<pubDate>(.*?)</pubDate>", item)
+                                
+                                if title_match:
+                                    title_text = title_match.group(1).replace("<![CDATA[", "").replace("]]>", "")
+                                    # 구글 뉴스 자체 출처 찌꺼기 제거
+                                    title_text = title_text.split(" - ")[0]
+                                    
+                                    date_str = ""
+                                    if date_match:
+                                        raw_date = date_match.group(1)
+                                        try:
+                                            # RFC 822 날짜 포맷 파싱 및 한국 시간(KST) 변환 조정
+                                            parsed_date = datetime.strptime(raw_date[:25].strip(), "%a, %d %b %Y %H:%M:%S")
+                                            kst_date = parsed_date + timedelta(hours=9)
+                                            date_str = kst_date.strftime("[%Y-%m-%d %H:%M]")
+                                        except:
+                                            date_str = f"[{raw_date[:16]}]"
+                                    
+                                    st.markdown(f"{t_idx+1}. `{date_str}` {title_text}")
+                                    news_found = True
+                                    
+                        if not news_found:
                             st.markdown("⁃ 현재 실시간 마켓 이슈 트래픽 수집 중입니다.")
                         
                         # 3. 데이터 및 실시간 이슈 매칭 알고리즘 분석서 작성
