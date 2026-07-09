@@ -22,31 +22,38 @@ default_stocks = {
     "069500": "KODEX 200"
 }
 
-# 2. 추가된 KOSPI 200 주요 우량 기업 리스트 (스크롤 최적화용 추가 배열)
+# 2. 추가된 KOSPI 200 주요 우량 기업 리스트 
 kospi_200_addition = {
     "LG에너지솔루션": "373220", "삼성바이오로직스": "207940", "기아": "000270",
     "셀트리온": "068270", "KB금융": "105560", "신한지주": "055550",
     "POSCO홀딩스": "005490", "네이버(NAVER)": "035420", "삼성물산": "028260",
     "삼성SDI": "006400", "LG화학": "051910", "현대모비스": "012330",
     "포스코퓨처엠": "003670", "카카오": "035720", "하나금융지주": "086790",
-    "삼성생명": "032830", "메리츠금융지주": "138040", "물산": "028260",
-    "LG전자": "066570", "SK이노베이션": "096770", "두산에너빌리티": "034020",
-    "HMM": "011200", "한국전력": "015760", "삼성화재": "000810",
-    "HD현대중공업": "329180", "우리금융지주": "316140", "대한항공": "003490",
-    "KT&G": "033780", "한화오션": "042660", "S-Oil": "010950",
-    "고려아연": "010130", "SK스퀘어": "402340", "한화연어로스페이스": "012450",
-    "포스코인터내셔널": "047050", "기업은행": "024110", "하이브": "352820",
-    "KT": "030200", "CJ제일제당": "097950", "LG디스플레이": "034220"
+    "삼성생명": "032830", "메리츠금융지주": "138040", "LG전자": "066570", 
+    "SK이노베이션": "096770", "두산에너빌리티": "034020", "HMM": "011200", 
+    "한국전력": "015760", "삼성화재": "000810", "HD현대중공업": "329180", 
+    "우리금융지주": "316140", "대한항공": "003490", "KT&G": "033780", 
+    "한화오션": "042660", "S-Oil": "010950", "고려아연": "010130", 
+    "SK스퀘어": "402340", "한화에어로스페이스": "012450", "포스코인터내셔널": "047050", 
+    "기업은행": "024110", "하이브": "352820", "KT": "030200", 
+    "CJ제일제당": "097950", "LG디스플레이": "034220"
 }
 
-# 대시보드 컴팩트 스타일링 (스크롤 방지용 작은 글씨 셋업)
+# 대시보드 컴팩트 스타일링 (스크롤 방지용 작은 글씨 및 예측 강조 블록 셋업)
 st.markdown("""
 <style>
-    /* 리포트 폰트 소형화 및 자간 압축 */
     .small-report-box {
         font-size: 0.88em !important;
         line-height: 1.5 !important;
         color: #333333;
+    }
+    .predict-alert-box {
+        background-color: #eef9f0;
+        border-left: 5px solid #27ae60;
+        padding: 10px;
+        margin-top: 10px;
+        border-radius: 4px;
+        font-size: 0.9em !important;
     }
     div.stTabs [data-baseweb="tab-list"] {
         gap: 12px;
@@ -139,8 +146,7 @@ with main_tabs[0]:
     
     st.markdown("<br><hr>", unsafe_allow_html=True)
     
-    # 🌟 [종목 스크롤 무한 증식 방지 인터페이스 구현]
-    # 사용자가 기존 종목군을 볼지, 확장된 코스피 200 추가 기업군을 볼지 라디오 버튼 분할 선택
+    # 🔍 퀀트 대상 기업군 필터링 셀렉터
     st.markdown("##### 🔍 퀀트 대상 기업군 필터링 셀렉터")
     group_choice = st.radio(
         "화면 분할 및 스크롤 단축을 위해 타겟 그룹을 지정해 주세요:",
@@ -148,18 +154,14 @@ with main_tabs[0]:
         horizontal=True
     )
     
-    # 선택된 그룹에 따라 딕셔너리 동적 맵핑 생성
     selected_stock_code = ""
     selected_stock_name = ""
     
     if group_choice == "📌 기본 지정 핵심 종목 (기존 유지)":
-        # 기존 6개 종목 가로형 셀렉트박스로 정돈
         chosen_name = st.selectbox("분석할 기존 핵심 종목을 선택하세요:", list(default_stocks.values()))
-        # 역방향 코드 매칭
         selected_stock_code = [k for k, v in default_stocks.items() if v == chosen_name][0]
         selected_stock_name = chosen_name
     else:
-        # 추가된 코스피 200 기업군 가나다 리스트 드롭다운 처리
         chosen_name = st.selectbox("분석할 KOSPI 200 추가 기업을 선택하세요:", list(kospi_200_addition.keys()))
         selected_stock_code = kospi_200_addition[chosen_name]
         selected_stock_name = chosen_name
@@ -167,7 +169,7 @@ with main_tabs[0]:
     st.markdown(f"### ✨ {selected_stock_name} ({selected_stock_code}) 퀀트 리포트 룸")
     
     if st.button(f"🔍 {selected_stock_name} AI 입체 분석 리포트 발행", type="primary"):
-        with st.spinner("퀀트 매크로 변수를 계산하는 중입니다..."):
+        with st.spinner("퀀트 매크로 변수 및 반등 예정 타임라인 연산 중..."):
             try:
                 # 네이버 금융 데이터 수집
                 url = f"https://fchart.stock.naver.com/sise.nhn?symbol={selected_stock_code}&timeframe=day&count=60&requestType=0"
@@ -222,7 +224,7 @@ with main_tabs[0]:
                     with urllib.request.urlopen(req_news) as response_news:
                         rss_data = response_news.read().decode('utf-8', errors='ignore')
                     
-                    items = rss_data.split("<item>")[1:6] # 스크롤 압축을 위해 최신 핵심 5개로 한정 조율
+                    items = rss_data.split("<item>")[1:6] 
                     st.markdown(f"<div class='small-report-box'><b>📰 실시간 {selected_stock_name} 마켓 핵심 이슈</b>", unsafe_allow_html=True)
                     
                     news_found = False
@@ -267,13 +269,42 @@ with main_tabs[0]:
                     with col_m3:
                         st.markdown(f"""<div style="background-color: {rb_card_bg}; padding: 12px; border-radius: 6px; border-left: 4px solid #2980b9; font-size:0.85em;"><b style="color:#2c3e50;">⚡ 추세 회귀 강도</b><br><span style="font-size:1.4em; font-weight:bold; color:#2980b9;">{rebound_energy}%</span></div>""", unsafe_allow_html=True)
                     
-                    # 🌟 작은 글씨 전용 가독성 최적화 보고서 출력 문단
+                    # 🌟 [알고리즘 연동형 주가 상승/하락 타임라인 도출식 복구]
+                    if today_disparity < 95:
+                        base_days = int((100 - today_disparity) * 2.8)
+                        if nasdaq_chg >= 0: base_days -= 5  # 미국 훈풍 시 반등 디데이 5일 단축 보정
+                        else: base_days += 4               # 미국 투매 시 바닥 확인 4일 지연 보정
+                        if is_fx_risk: base_days += 4       # 국장 환율 리스크 발발 시 4일 페널티 누적
+                        d_day_result = max(5, min(45, base_days))
+                        
+                        predict_html = f"""
+                        <div class='predict-alert-box'>
+                            🎯 <b>주가 반등 및 추세 전환 예상 시점:</b> <span style='color:#27ae60; font-weight:bold;'>D-Day {d_day_result}일 내외 (약 {round(d_day_result/5, 1)}주일 이내 반등 전환 유력)</span><br>
+                            <span style='font-size:0.9em; color:#555;'>• <b>예측 근거:</b> 현재 왜곡된 국내 이격도 스펙트럼과 금일 미국 마감 지수 등락률 가중치를 백엔드에서 결합 역산한 결과입니다. 이 기간 동안 분할로 물타기 단가를 관리하는 퀀트 포지션이 유리합니다.</span>
+                        </div>
+                        """
+                    elif today_disparity <= 103:
+                        predict_html = """
+                        <div class='predict-alert-box' style='background-color:#f4f6f7; border-left:5px solid #7f8c8d;'>
+                            ⚖️ <b>주가 방향성 전망:</b> <span style='color:#34495e; font-weight:bold;'>당분간 단기 수렴 및 박스권 횡보 우세</span><br>
+                            <span style='font-size:0.9em; color:#555;'>• <b>예측 근거:</b> 현재 주가가 20일 균형 평균 가격대에 긴밀히 밀착해 있어 위아래 왜곡이 없는 중립 상태입니다. 차주 공시될 미국 거시 경제지표(CPI 등)의 수급 유입 방향성에 따라 새 진입 타이밍이 결정될 것입니다.</span>
+                        </div>
+                        """
+                    else:
+                        predict_html = """
+                        <div class='predict-alert-box' style='background-color:#fdf2e9; border-left:5px solid #e67e22;'>
+                            🔥 <b>주가 방향성 전망:</b> <span style='color:#e67e22; font-weight:bold;'>단기 오버슈팅에 따른 숨고르기(하락조정) 리스크 경계</span><br>
+                            <span style='font-size:0.9em; color:#555;'>• <b>예측 근거:</b> 이격도가 103%를 초과하여 탐욕 수급이 과열 영역에 머물고 있습니다. 신규 불타기는 절대 금지이며, 단기 차익 매물 출현에 따른 이평선 회귀성 눌림목 조정을 대비해 분할 익절하는 타임라인입니다.</span>
+                        </div>
+                        """
+                    st.markdown(predict_html, unsafe_allow_html=True)
+                    
+                    # 작은 글씨 전용 가독성 최적화 보고서 출력 문단
                     st.markdown(f"""
-                    <div class="small-report-box" style="background-color:#fcfcfc; padding:12px; border:1px solid #eee; border-radius:6px; margin-top:15px;">
+                    <div class="small-report-box" style="background-color:#fcfcfc; padding:12px; border:1px solid #eee; border-radius:6px; margin-top:12px;">
                         <b>📜 {selected_stock_name} 데이터 분석 요약 서머리</b><br>
-                        • <b>포지션 진단:</b> {selected_stock_name}의 현재 이격도는 {today_disparity}% 수준으로 기술적 균형 점검 단계에 놓여 있습니다.<br>
-                        • <b>추세 예측 리드타임:</b> 매크로 변수 가중 연산 기준 반등 에너지 누적 지표는 {rebound_energy}%로 계량 계산되었습니다. 
-                        단기 변동성 노이즈 진정 국면 돌입 시 분할 밴드 대응 영역이 유효합니다.
+                        • <b>포지션 진단:</b> {selected_stock_name}의 현재 이격도는 {today_disparity}% 수준으로 기술적 균형 가격 분석 레이어에 놓여 있습니다.<br>
+                        • <b>마켓 멘탈가이드:</b> 주린이방 퀀트 공식은 외부 노이즈에 뇌동매매하지 않고 오직 철저한 숫자의 통계적 복원력을 추종합니다.
                     </div>
                     """, unsafe_allow_html=True)
             except Exception as e:
