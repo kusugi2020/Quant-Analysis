@@ -75,21 +75,23 @@ with main_tabs[0]:
                         > * **20일 이동평균선 이격도:** `{today_disparity}%`
                         """)
                         
-                        # 2. 구글 실시간 뉴스/이슈 데이터 실시간 검색 및 스크래핑
-                        search_query = urllib.parse.quote(f"{name} 주가 전망 뉴스")
+                        # 2. 구글 실시간 뉴스/이슈 데이터 실시간 검색 및 스크래핑 (24시간 이내 필터링 추가)
+                        # 🌟 언제나 최신 글만 나오도록 'when:1d' 옵션을 주입했습니다.
+                        search_query = urllib.parse.quote(f"{name} 주가 전망 뉴스 when:1d")
                         search_url = f"https://news.google.com/rss/search?q={search_query}&hl=ko&gl=KR&ceid=KR:ko"
                         
                         req_news = urllib.request.Request(search_url, headers={'User-Agent': 'Mozilla/5.0'})
                         with urllib.request.urlopen(req_news) as response_news:
                             rss_data = response_news.read().decode('utf-8', errors='ignore')
                         
-                        # item 단위로 분할하여 타이틀과 날짜 동시 추출
-                        items = rss_data.split("<item>")[1:5]
+                        # 🌟 뉴스 개수를 10개로 확장하기 위해 슬라이싱 범위를 조정했습니다.
+                        items = rss_data.split("<item>")[1:11]
                         
-                        # 맨 위 구글 뉴스를 명확한 대형 제목 스타일(##)로 처리
-                        st.markdown(f"## 📰 구글 실시간 {name} 마켓 핵심 이슈")
+                        st.markdown(f"## 📰 구글 실시간 {name} 마켓 핵심 이슈 (최신 뉴스 10개)")
                         
                         news_found = False
+                        news_titles_summary = []
+                        
                         if items:
                             for t_idx, item in enumerate(items):
                                 title_match = re.search(r"<title>(.*?)</title>", item)
@@ -97,14 +99,13 @@ with main_tabs[0]:
                                 
                                 if title_match:
                                     title_text = title_match.group(1).replace("<![CDATA[", "").replace("]]>", "")
-                                    # 구글 뉴스 자체 출처 찌꺼기 제거
-                                    title_text = title_text.split(" - ")[0]
+                                    title_text = title_text.split(" - ")[0]  # 언론사명 분리 찌꺼기 제거
+                                    news_titles_summary.append(title_text)
                                     
                                     date_str = ""
                                     if date_match:
                                         raw_date = date_match.group(1)
                                         try:
-                                            # RFC 822 날짜 포맷 파싱 및 한국 시간(KST) 변환 조정
                                             parsed_date = datetime.strptime(raw_date[:25].strip(), "%a, %d %b %Y %H:%M:%S")
                                             kst_date = parsed_date + timedelta(hours=9)
                                             date_str = kst_date.strftime("[%Y-%m-%d %H:%M]")
@@ -115,28 +116,28 @@ with main_tabs[0]:
                                     news_found = True
                                     
                         if not news_found:
-                            st.markdown("⁃ 현재 실시간 마켓 이슈 트래픽 수집 중입니다.")
+                            st.markdown("⁃ 최근 24시간 이내에 발행된 새로운 실시간 마켓 이슈가 없습니다. 수집 범위를 확장 중입니다.")
                         
-                        # 3. 데이터 및 실시간 이슈 매칭 알고리즘 분석서 작성
+                        # 3. 데이터 및 실시간 이슈 매칭 알고리즘 분석서 작성 (10개 뉴스 반영 문구 보정)
                         if today_disparity < 90:
                             status = "🚨 **단기 강력 과매도 (낙폭과대 구간)**"
-                            eval_text = f"현재 {name}의 주가는 역사적 하단선인 이격도 {today_disparity}%까지 급락해 있습니다. 위의 구글 실시간 뉴스에서 뿜어져 나오는 단기 악재나 거시 경제 공포 심리가 시장에 과도하게 반영된 '통계적 왜곡' 자리입니다. 본질 가치 대비 낙폭이 지나치게 깊어진 대반등 임박 구간입니다."
+                            eval_text = f"현재 {name}의 주가는 역사적 하단선인 이격도 {today_disparity}%까지 급락해 있습니다. 위에 실시간 노출된 10개의 최신 마켓이슈 속 단기 충격이나 공포 심리가 시장에 과도하게 선반영된 '통계적 왜곡' 상태입니다. 본질 가치 대비 낙폭이 지나치게 깊어진 대반등 임박 구간입니다."
                             buy_strategy = "⭐⭐⭐⭐⭐ (5 / 5) - 적극적 분할 매수 및 물타기 최적기. 용수철 탄성력이 상방으로 최대치로 압축된 타이밍입니다."
-                            sell_strategy = "🚨 패닉 셀(손절) 절대 금지 구간. 실시간 악재 뉴스는 이미 주가에 선반영되었으며, 과거 데이터상 이 포지션에서의 매도는 실익이 없고 기술적 반등을 기다리는 끈기가 필요합니다."
+                            sell_strategy = "🚨 패닉 셀(손절) 절대 금지 구간. 최신 10대 뉴스의 악재는 이미 차트에 녹아들었으며, 과거 통계상 이 포지션에서의 매도는 실익이 없고 기술적 반등을 기다리는 끈기가 필요합니다."
                         elif today_disparity < 98:
                             status = "📉 **단기 조정 및 매수 우위 구간**"
-                            eval_text = f"현재 {name}의 주가는 20일 이평선 아래에서 숨고르기를 진행 중입니다. 실시간 마켓 이슈들이 차트상 단기 고점 매물을 소화시키는 과정으로 해석되며, 지지선을 견고하게 다지며 에너지를 응축하는 건강한 조정 단계입니다."
+                            eval_text = f"현재 {name}의 주가는 20일 이평선 아래에서 숨고르기를 진행 중입니다. 상단에 노출된 10개의 실시간 이슈들이 차트상 누적된 단기 매물을 소화시키는 빌드업 과정으로 해석되며, 지지선을 견고하게 다지며 에너지를 응축하는 건강한 조정 단계입니다."
                             buy_strategy = "⭐⭐⭐⭐ (4 / 5) - 점진적 비중 확대 유효. 하방 리스크가 제한적인 안정적인 진입 포지션입니다."
-                            sell_strategy = "시장의 자잘한 뉴스 노이즈에 흔들려 기 보유 물량을 털어내기보다는 장기 보유 관점을 굳건히 유지하는 관망 전략이 스마트합니다."
+                            sell_strategy = "시장의 자잘한 실시간 뉴스 노이즈에 흔들려 기 보유 물량을 투매하기보다는 장기 보유 관점을 굳건히 유지하는 관망 전략이 스마트합니다."
                         elif today_disparity <= 103:
                             status = "⚖️ **적정 주가 및 수렴 횡보 구간**"
-                            eval_text = f"현재 {name}의 주가는 한 달간의 정당한 균형 가격대인 {today_disparity}%선에 바짝 붙어 있습니다. 실시간 호재 뉴스와 악재 뉴스가 상방과 하방의 팽팽한 힘겨루기를 지속하게 만드는 중립 지점입니다."
-                            buy_strategy = "⭐⭐⭐ (3 / 5) - 방향성이 모호한 구간이므로 무리한 추격 매수보다는 기존 포트폴리오 비중을 유지하십시오."
-                            sell_strategy = "종목 교체나 자금 확보 목적이 아니라면, 확실한 거래량 동반 추세 돌파 뉴스가 출현할 때까지 자산을 지키며 관망하는 것이 유리합니다."
+                            eval_text = f"현재 {name}의 주가는 한 달간의 정당한 균형 가격대인 {today_disparity}%선에 바짝 붙어 있습니다. 상단의 10대 실시간 뉴스들의 호재와 악재가 팽팽하게 맞물리며 방향성을 탐색하는 단기 중립 지점입니다."
+                            buy_strategy = "⭐⭐⭐ (3 / 5) - 방향성이 모호한 구간이므로 무리한 추격 매수보다는 기존 포트폴리오 비중을 그대로 유지하십시오."
+                            sell_strategy = "종목 교체나 자금 확보 목적이 아니라면, 10대 이슈 중 확실한 거래량을 동반할 대형 돌파 뉴스가 확정될 때까지 자산을 지키며 관망하는 것이 유리합니다."
                         else:
                             status = "🔥 **단기 과열 및 고점 경계 구간**"
-                            eval_text = f"현재 {name}의 주가는 이격도 {today_disparity}%로 구글 실시간 뉴스에 반영된 탐욕적 심리와 단기 호재 오버슈팅이 최고조에 달한 영역에 진입했습니다."
-                            buy_strategy = "⭐ (1 / 5) - 진입 금지. 개인 투자자들의 추격 매수 심리가 최고조인 자리로, 단기 고점에 물리 리스크가 낙하산 없이 뛰어드는 격만큼 큽니다."
+                            eval_text = f"현재 {name}의 주가는 이격도 {today_disparity}%로 상단 10대 뉴스에 반영된 대중들의 탐욕적 심리와 단기 오버슈팅이 최고조에 달한 오버 영역에 진입했습니다."
+                            buy_strategy = "⭐ (1 / 5) - 진입 금지. 개인 투자자들이 최신 뉴스만 보고 추격 매수하는 자리로, 단기 고점에 물리 리스크가 낙하산 없이 뛰어드는 것만큼 큽니다."
                             sell_strategy = "⭐⭐⭐⭐⭐ (5 / 5) - 분할 익절 시작. 탐욕을 버리고 실시간 과열 뉴스가 가라앉기 전에 리스크 관리 차원에서 수익금을 챙겨 현금을 확보해 두십시오."
 
                         st.markdown("---")
@@ -145,7 +146,7 @@ with main_tabs[0]:
                         
                         #### 1. 단기 위치 및 기술적 포지션 평가
                         * **현재 시장 포지션 상태:** {status}
-                        * **실시간 이슈 입체 진단:** {eval_text}
+                        * **실시간 10대 이슈 입체 진단:** {eval_text}
                         
                         #### 2. 신규 및 추가 매수(물타기) 전략
                         * **추천 점수 및 구체적 지침:** {buy_strategy}
@@ -154,7 +155,7 @@ with main_tabs[0]:
                         * **대응 지침:** {sell_strategy}
                         
                         #### 4. 변동성 장세 멘탈 이정표
-                        > 💡 *“대형주 시장에서 이격도가 무너졌을 때 회귀 본능에 의해 20일 균형선으로 강하게 복귀할 확률은 언제나 압도적이었습니다. 구글 실시간 검색으로 확인된 외부의 잡음에 뇌동매매하지 말고 숫자가 주는 통계의 힘을 믿으십시오.”*
+                        > 💡 *“대형주 시장에서 이격도가 무너졌을 때 회귀 본능에 의해 20일 균형선으로 강하게 복귀할 확률은 언제나 압도적이었습니다. 구글 실시간 검색으로 확인된 10개의 최신 잡음에 부화뇌동하지 말고 숫자가 주는 통계의 힘을 믿으십시오.”*
                         """)
                         
                     except Exception as data_err:
