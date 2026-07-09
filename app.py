@@ -1,7 +1,7 @@
 """
 이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-리뉴얼 포인트: 투자자 맞춤형 이격도 설정 가이드 및 시각화 강화
+리뉴얼 포인트: 좌측 메뉴 순서 변경 (종목코드 -> 이격도입력(예시포함) -> 조회시작일)
 """
 
 import streamlit as st
@@ -22,7 +22,7 @@ st.set_page_config(
 )
 
 # ----------------------------------------------------------------------
-# [백엔드 함수] 데이터 연산 로직 (기존 핵심 알고리즘 유지)
+# [백엔드 함수] 데이터 연산 로직 (실거래 데이터 전용)
 # ----------------------------------------------------------------------
 def load_price_data(ticker: str, start: str, end: str) -> pd.DataFrame:
     try:
@@ -32,14 +32,6 @@ def load_price_data(ticker: str, start: str, end: str) -> pd.DataFrame:
         return df[["Close", "Volume"]].dropna()
     except ImportError as e:
         raise ImportError("FinanceDataReader 설치가 필요합니다.") from e
-
-def generate_synthetic_data(n_days=1500, seed=42) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    returns = rng.normal(0.0003, 0.018, n_days)
-    price = 50000 * np.exp(np.cumsum(returns))
-    dates = pd.bdate_range("2019-01-01", periods=n_days)
-    volume = rng.integers(1_000_000, 5_000_000, n_days)
-    return pd.DataFrame({"Close": price, "Volume": volume}, index=dates)
 
 def compute_indicators(df: pd.DataFrame, ma_window: int = 20) -> pd.DataFrame:
     df = df.copy()
@@ -114,8 +106,31 @@ def walk_forward_validation(df: pd.DataFrame, threshold: float, horizon=20, n_fo
         })
     return pd.DataFrame(results)
 
+def fit_rebound_probability_model(df: pd.DataFrame, horizon=20, test_size=0.3):
+    feat_cols = ["Disparity", "Volatility20", "VolumeZ"]
+    target_col = f"fwd_win_{horizon}d"
+    data = df.dropna(subset=feat_cols + [target_col]).copy()
+    split_idx = int(len(data) * (1 - test_size))
+    train, test = data.iloc[:split_idx], data.iloc[split_idx:]
+    
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(train[feat_cols])
+    X_test = scaler.transform(test[feat_cols])
+    
+    model = LogisticRegression()
+    model.fit(X_train, train[target_col])
+    
+    return {
+        "coef": dict(zip(["이격도 (Disparity)", "20일 변동성 (Volatility)", "거래량 이상치 (Volume Z-score)"], model.coef_[0].round(4))),
+        "train_acc": model.score(X_train, train[target_col]),
+        "test_acc": model.score(X_test, test[target_col]),
+        "baseline_acc": max(test[target_col].mean(), 1 - test[target_col].mean()),
+        "train_p": f"{train.index[0].date()}~{train.index[-1].date()}",
+        "test_p": f"{test.index[0].date()}~{test.index[-1].date()}"
+    }
+
 # ----------------------------------------------------------------------
-# [프론트엔드] 사이트 네비게이션 및 디자인
+# [프론트엔드] 사이트 디자인 및 네비게이션
 # ----------------------------------------------------------------------
 st.markdown("""
     <div style="background-color:#0F172A; padding:24px; border-radius:12px; margin-bottom:25px; border-left: 8px solid #3B82F6;">
@@ -124,38 +139,41 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-menu_tab1, menu_tab2, menu_tab3 = st.tabs(["🎯 오늘의 투자 판정 & 대시보드", "📚 분석 원리 쉽게 이해하기", "📖 초보자 사용 설명서"])
+menu_tab1, menu_tab2, menu_tab3 = st.tabs(["🎯 투자 판단 분석", "📚 분석 원리", "📖 사용 방법"])
 
-# 사이드바 제어판
+# ==================================================================
+# 🔥 요청사항 반영: 왼쪽 메뉴 순서 변경 및 직관적 예시 추가
+# ==================================================================
 st.sidebar.markdown("### 🕹️ 분석 조건 설정")
-data_mode = st.sidebar.selectbox("💾 어떤 데이터를 볼까요?", ["합성 데이터 (가상 테스트)", "국내 주식 (실제 거래 데이터)"])
-input_threshold = st.sidebar.slider("📉 얼마나 과매도 되었을 때 살까요? (이격도 %)", min_value=85.0, max_value=100.0, value=93.0, step=0.5)
 
-if data_mode == "국내 주식 (실제 거래 데이터)":
-    ticker_code = st.sidebar.text_input("📌 종목코드 6자리 (삼성전자: 005930)", value="005930")
-    start_date = st.sidebar.text_input("📅 조회 시작일", value="2015-01-01")
-    execute_button = st.sidebar.button("🚀 분석 시작하기", use_container_width=True)
-else:
-    ticker_code, start_date = None, "2015-01-01"
-    execute_button = True
+# 1. 종목코드 입력 (합성데이터 선택 제거)
+ticker_code = st.sidebar.text_input("📌 1. 종목코드 입력 (6자리)", value="005930")
 
-# 데이터 로딩
-if data_mode == "국내 주식 (실제 거래 데이터)" and ticker_code:
+# 2. 이격도 입력 슬라이더 및 하단 도움말 문구 추가
+input_threshold = st.sidebar.slider("📉 2. 매수 이격도 기준 설정 (%)", min_value=85.0, max_value=100.0, value=93.0, step=0.5)
+st.sidebar.caption("💡 **이격도란?** 최근 20일 평균 가격에서 얼마나 폭락했는지 정하는 기준입니다. (ex. 20일 평균가가 1만 원일 때, 10% 떨어진 9천 원에 매수하겠다면 이격도 **90%** 설정)")
+
+# 3. 조회 시작일
+start_date = st.sidebar.text_input("📅 3. 조회 시작일", value="2015-01-01")
+
+# 실행 버튼
+execute_button = st.sidebar.button("🚀 분석 시작하기", use_container_width=True)
+
+
+# 데이터 로딩 프로세스
+is_data_loaded = False
+if ticker_code and execute_button:
     try:
         raw_df = load_price_data(ticker_code, start_date, None)
         is_data_loaded = True
     except Exception:
-        st.sidebar.error("⚠️ 올바른 종목코드를 입력해 주세요.")
-        is_data_loaded = False
-else:
-    raw_df = generate_synthetic_data()
-    is_data_loaded = True
+        st.sidebar.error("⚠️ 올바른 종목코드를 입력해 주세요. (예: 미래에셋증권 006800, 삼성전자 005930)")
 
 # ----------------------------------------------------------------------
-# 메뉴 1: 실시간 분석 계기판
+# 메뉴 1: 투자 판단 분석
 # ----------------------------------------------------------------------
 with menu_tab1:
-    if is_data_loaded and execute_button:
+    if is_data_loaded:
         processed_df = compute_indicators(raw_df)
         processed_df = add_forward_returns(processed_df)
         
@@ -163,11 +181,8 @@ with menu_tab1:
         total_signals = (processed_df['Disparity'] < input_threshold).sum()
         bt_res = backtest_threshold_strategy(processed_df, input_threshold)
         
-        # ==================================================================
-        # 1. 오늘의 투자 최종 신호등 판정
-        # ==================================================================
+        # 오늘의 투자 최종 신호등 판정
         st.markdown("### 🚨 [오늘의 투자 최종 신호등 판정]")
-        
         valid_horizons = bt_res[bt_res["판정"] == "🟢 진짜 신호 (진입 가능)"]
         
         if current_disparity < input_threshold:
@@ -203,20 +218,17 @@ with menu_tab1:
                 </div>
             """, unsafe_allow_html=True)
             
-        # ==================================================================
-        # 🔥 신설 메뉴: 투자자 맞춤형 슬라이더 가이드 문구
-        # ==================================================================
+        # 투자자 맞춤형 슬라이더 가이드 문구
         st.markdown("")
-        with st.expander("💡 <b>왼쪽 '이격도 매수 임계값' 슬라이더 조절은 어떤 의미인가요? (필독)</b>", expanded=True):
+        with st.expander("💡 <b>현재 이격도 설정 기준 해설</b>", expanded=True):
             st.markdown(f"""
-            * **마음대로 기준을 정해보세요:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, *"나는 20일 평균 가격보다 **-{100-input_threshold:.1f}% 이상 폭락한 공포의 자리**에서만 살래"*라고 나만의 커트라인을 선언하신 것입니다.
-            * **현재 상태 해석:** 지금 이 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 즉, 평균보다 **-{100-current_disparity:.1f}%** 하락해 있습니다. 투자자님이 정한 커트라인보다 주가가 낮기 때문에 시스템이 과거 데이터를 뒤져 '살지 말지'를 주황색/초록색 창으로 채점해 준 것입니다.
-            * **어떻게 활용하나요?:** 슬라이더 숫자를 높이면(예: 96%) 매수 기회는 자주 오지만 위험한 자리일 수 있고, 숫자를 낮추면(예: 90%) 기회는 매우 드물게 오지만 엄청나게 안전한 자리가 됩니다. 정답은 없습니다! 슬라이더를 바꿔가며 아래 표의 **[판정]**에 초록불이 켜지는 나만의 최적의 황금 커트라인을 탐색해 보세요.
+            * **내 기준 선언:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, 최근 20일 평균 가격선 대비 **-{100-input_threshold:.1f}% 이상 급락한 지점**에서만 진입하겠다는 의미입니다.
+            * **현재 종목 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
             """)
         
         st.markdown("---")
         
-        # 2. 상단 지표 요약
+        # 상단 지표 요약
         m1, m2, m3 = st.columns(3)
         with m1:
             st.metric("🔬 검증에 사용된 총 일수", f"{len(processed_df):,} 일")
@@ -227,7 +239,7 @@ with menu_tab1:
             
         st.markdown("---")
         
-        # 3. 메인 시각화 그래프 구간
+        # 메인 시각화 그래프 구간
         st.markdown("### 📊 최근 주가 추이와 이격도 흐름")
         chart_data = processed_df.tail(250)[["Close", "MA", "Disparity"]]
         st.line_chart(chart_data[["Close", "MA"]], height=250)
@@ -235,7 +247,7 @@ with menu_tab1:
         
         st.markdown("---")
         
-        # 4. 전략 기대 성과 표 및 그래프
+        # 전략 기대 성과 표 및 그래프
         st.markdown("### 🎯 1단계 분석 결과: 이 자리에 사면 내 계좌는 어떻게 될까?")
         st.dataframe(bt_res[["보유기간", "신호발생", "승률", "전략수익률", "시장수익률", "초과수익률", "판정"]], use_container_width=True, hide_index=True)
         
@@ -248,7 +260,7 @@ with menu_tab1:
 
         st.markdown("---")
         
-        # 5. 리스크 관리 차트 및 과거 영속성 검증
+        # 리스크 관리 차트 및 과거 영속성 검증
         col_chart1, col_chart2 = st.columns(2)
         with col_chart1:
             st.markdown("### 🛡️ 2단계 분석 결과: 물리더라도 얼마나 깨질까? (리스크 범위)")
@@ -262,8 +274,59 @@ with menu_tab1:
             st.markdown("### ⏳ 3단계 분석 결과: 옛날에도 고르게 잘 먹혔을까?")
             wf_res = walk_forward_validation(processed_df, input_threshold)
             st.bar_chart(wf_res.set_index("구간"))
-
+            
+        st.markdown("---")
+        st.markdown("### 🤖 부록: 인공지능(로지스틱 회귀) 모델 상세 성적표")
+        model_res = fit_rebound_probability_model(processed_df)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write(f"- 알고리즘 예측 정확도: `{model_res['test_acc']*100:.1f}%` *(무조건 한쪽으로 찍는 기본선: {model_res['baseline_acc']*100:.1f}%)*")
+        with c2:
+            st.write(f"- 영향력 지표 가중치: `{model_res['coef']}`")
     else:
-        st.info("👈 왼쪽 패널에서 설정을 완료하고 [🚀 분석 시작하기] 버튼을 눌러주세요.")
+        st.info("👈 왼쪽 패널에서 [1. 종목코드], [2. 이격도 기준], [3. 시작일]을 지정한 뒤 [🚀 분석 시작하기] 버튼을 눌러주세요.")
 
-# ... (이하 메뉴 2, 메뉴 3 코드는 기존과 동일) ...
+# ----------------------------------------------------------------------
+# 메뉴 2: 분석 원리
+# ----------------------------------------------------------------------
+with menu_tab2:
+    st.markdown("### 📚 시스템 작동 원리 및 수학적 근거 상세 설명")
+    st.write("본 플랫폼은 시장의 무작위 노이즈와 '가짜 반등'을 완전히 격리하기 위해 검증된 금융공학 방법론을 적용합니다.")
+    st.markdown("---")
+    st.markdown("#### 1️⃣ 독자적인 반등 알파 검증 : 독립표본 t-test")
+    st.latex(r"t = \frac{\bar{X}_{strategy} - \bar{X}_{market}}{\sqrt{\frac{s^2_{strategy}}{n_{strategy}} + \frac{s^2_{market}}{n_{market}}}}")
+    st.markdown("""
+    * **귀무가설 ($H_0$):** 이격도가 낮을 때 사나 아무 때나 사나 수익률 차이가 없다. (우연이다)
+    * **대립가설 ($H_1$):** 이격도가 낮을 때 사면 시장 평균보다 유의미하게 수익률이 높다. (법칙이 존재한다)
+    * **판정:** 계산된 유의확률 $p\text{-value} < 0.05$ 조건이 충족될 때만 귀무가설을 기각하고 **🟢 진짜 신호**로 인정합니다.
+    """)
+    st.markdown("---")
+    st.markdown("#### 2️⃣ 비모수적 리스크 한계 측정 : 부트스트랩 신뢰구간 (Bootstrap CI)")
+    st.markdown("""
+    수익률 분포가 정규분포를 따르지 않는 주식 시장의 특성을 반영하여, 과거 신호 발생 시점의 수익률 표본을 **3,000번 이상 복원 추출**하는 시뮬레이션을 수행합니다.
+    추출된 3,000개의 평균값 중 하위 5% 지점을 **[최악의 경우]**, 상위 5% 지점을 **[최선의 경우]**로 정의하여 양측 90% 신뢰구간을 연산합니다.
+    """)
+    st.markdown("---")
+    st.markdown("#### 3️⃣ 다중 요인 확률 추정 : 로지스틱 회귀 (Logistic Regression)")
+    st.latex(r"P(Y=1|X) = \frac{1}{1 + e^{-(\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_3)}}")
+    st.markdown("""
+    * **표준화 계수 ($\beta$):** '이격도($X_1$)', '20일 변동성($X_2$)', '거래량 이상치($X_3$)'가 향후 반등 성공률에 미치는 가중치를 AI 모델이 데이터로부터 직접 추정합니다.
+    """)
+
+# ----------------------------------------------------------------------
+# 메뉴 3: 사용 방법
+# ----------------------------------------------------------------------
+with menu_tab3:
+    st.markdown("### 📖 퀀트 플랫폼 기반 실전 투자 가이드라인")
+    st.write("통계 계기판을 보고 실제 매매 시나리오를 짜고 자금을 관리하는 프로들의 투자 워크플로우입니다.")
+    st.markdown("---")
+    st.markdown("#### 🛠️ 1단계: 조건 탐색 및 필터링")
+    st.markdown("""
+    1. 왼쪽 패널에서 분석할 종목코드를 입력합니다.
+    2. **[투자 판단 분석]** 탭의 성과 표에서 **[판정]** 열을 스캔하여 **🟢 진짜 신호**가 켜진 보유일수(5일~40일)가 있는지 확인합니다.
+    """)
+    st.markdown("---")
+    st.markdown("#### 💰 2단계: 실전 켈리 기준(Kelly Criterion) 기반 자금 관리 규칙")
+    st.latex(r"f^* = \frac{b \cdot p - (1 - p)}{b}")
+    st.markdown("""
+    * **투자 비중 세팅 조언 (안전
