@@ -1,22 +1,7 @@
 """
-이격도(Disparity) 기반 주가 반등 전략 - 통계적 검증 프레임워크
+이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-
-기존 앱의 문제점:
-  - "Rebound Energy = (100-이격도)*2.5 + 미국지수*0.4 + 환율*0.2" 같은 계수가
-    통계적 근거 없이 임의로 설정됨
-  - 검증(백테스트) 없이 "D-Day 23일" 같은 확정적 숫자를 제시
-  - 표본 8개(역사적 사건)로 일반화 → 생존 편향, 과적합 위험
-
-이 스크립트가 하는 것:
-  1. 실제 과거 데이터로 "이격도가 낮을 때 정말 반등하는가?"를 대량 표본으로 검증
-  2. 벤치마크(그냥 매수 후 보유) 대비 초과수익이 통계적으로 유의한지 t-test
-  3. 부트스트랩으로 신뢰구간 산출 (점 추정치 대신 "range + 신뢰수준")
-  4. Look-ahead bias를 피하기 위한 시계열 기반 walk-forward 검증
-  5. 임의 상수 대신, 로지스틱 회귀로 계수를 데이터에서 직접 추정
-
-필요 라이브러리:
-  pip install FinanceDataReader pandas numpy scipy scikit-learn streamlit
+구조: Multi-tab 웹 애플리케이션 형태 (대시보드, 분석 원리, 사용 설명서)
 """
 
 import streamlit as st
@@ -28,51 +13,41 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings("ignore")
 
+# 스트림릿 페이지 기본 설정 (웹사이트 스타일)
+st.set_page_config(
+    page_title="Disparity Quant Platform",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # ----------------------------------------------------------------------
-# 1. 데이터 로딩
+# [백엔드 함수] 1. 데이터 로딩 및 연산 로직 (기존 알고리즘 유지)
 # ----------------------------------------------------------------------
 def load_price_data(ticker: str, start: str, end: str) -> pd.DataFrame:
-    """
-    한국 주식은 FinanceDataReader, 해외 주식은 yfinance 등으로 교체 가능.
-    반환: Date 인덱스, Close, Volume 컬럼을 가진 DataFrame
-    """
     try:
         import FinanceDataReader as fdr
         df = fdr.DataReader(ticker, start, end)
         df = df.rename(columns=str.title)
         return df[["Close", "Volume"]].dropna()
     except ImportError as e:
-        raise ImportError(
-            "FinanceDataReader가 필요합니다: pip install finance-datareader"
-        ) from e
-
+        raise ImportError("FinanceDataReader 설치가 필요합니다.") from e
 
 def generate_synthetic_data(n_days=1500, seed=42) -> pd.DataFrame:
-    """코드 검증용 합성 데이터 (실거래 데이터 없이도 로직 테스트 가능)."""
     rng = np.random.default_rng(seed)
-    # 약간의 평균회귀 성질을 가진 랜덤워크로 생성 (실제 주가와 유사한 성질)
     returns = rng.normal(0.0003, 0.018, n_days)
     price = 50000 * np.exp(np.cumsum(returns))
     dates = pd.bdate_range("2019-01-01", periods=n_days)
     volume = rng.integers(1_000_000, 5_000_000, n_days)
     return pd.DataFrame({"Close": price, "Volume": volume}, index=dates)
 
-
-# ----------------------------------------------------------------------
-# 2. 지표 계산
-# ----------------------------------------------------------------------
 def compute_indicators(df: pd.DataFrame, ma_window: int = 20) -> pd.DataFrame:
     df = df.copy()
     df["MA"] = df["Close"].rolling(ma_window).mean()
     df["Disparity"] = df["Close"] / df["MA"] * 100
     df["Volatility20"] = df["Close"].pct_change().rolling(20).std() * np.sqrt(252)
-    df["VolumeZ"] = (
-        (df["Volume"] - df["Volume"].rolling(60).mean())
-        / df["Volume"].rolling(60).std()
-    )
+    df["VolumeZ"] = (df["Volume"] - df["Volume"].rolling(60).mean()) / df["Volume"].rolling(60).std()
     return df
-
 
 def add_forward_returns(df: pd.DataFrame, horizons=(5, 10, 20, 40)) -> pd.DataFrame:
     df = df.copy()
@@ -81,34 +56,14 @@ def add_forward_returns(df: pd.DataFrame, horizons=(5, 10, 20, 40)) -> pd.DataFr
         df[f"fwd_win_{h}d"] = (df[f"fwd_ret_{h}d"] > 0).astype(float)
     return df
 
-
-# ----------------------------------------------------------------------
-# 3. 부트스트랩 신뢰구간
-# ----------------------------------------------------------------------
 def bootstrap_ci(series: pd.Series, n_boot=3000, ci=0.90, seed=1):
     rng = np.random.default_rng(seed)
     arr = series.dropna().values
-    if len(arr) == 0:
-        return (np.nan, np.nan)
+    if len(arr) == 0: return (np.nan, np.nan)
     boot_means = rng.choice(arr, size=(n_boot, len(arr)), replace=True).mean(axis=1)
-    lo = np.percentile(boot_means, (1 - ci) / 2 * 100)
-    hi = np.percentile(boot_means, (1 + ci) / 2 * 100)
-    return lo, hi
+    return np.percentile(boot_means, (1 - ci) / 2 * 100), np.percentile(boot_means, (1 + ci) / 2 * 100)
 
-
-# ----------------------------------------------------------------------
-# 4. 핵심: 임계값 전략 백테스트 (벤치마크 대비 통계 검정 포함)
-# ----------------------------------------------------------------------
-def backtest_threshold_strategy(
-    df: pd.DataFrame,
-    threshold: float = 95.0,
-    horizons=(5, 10, 20, 40),
-    min_samples: int = 30,
-) -> pd.DataFrame:
-    """
-    '이격도가 threshold 미만인 날 매수했다면?'을 실제 표본 전체에서 검증.
-    벤치마크(전체 기간 평균 수익률) 대비 초과수익의 통계적 유의성을 t-test로 확인.
-    """
+def backtest_threshold_strategy(df: pd.DataFrame, threshold: float, horizons=(5, 10, 20, 40), min_samples=30):
     signal = df["Disparity"] < threshold
     rows = []
     for h in horizons:
@@ -117,10 +72,7 @@ def backtest_threshold_strategy(
         all_ret = df[col].dropna()
 
         if len(sig_ret) < min_samples:
-            rows.append({
-                "horizon_days": h, "n_samples": len(sig_ret),
-                "note": f"표본 부족(<{min_samples}) — 신뢰 불가",
-            })
+            rows.append({"보유기간(일)": h, "신호발생 횟수": len(sig_ret), "비고": "표본 부족으로 검증 불가"})
             continue
 
         win_rate = (sig_ret > 0).mean()
@@ -128,176 +80,217 @@ def backtest_threshold_strategy(
         bench_avg = all_ret.mean()
         excess = avg_ret - bench_avg
         ci_lo, ci_hi = bootstrap_ci(sig_ret)
-        t_stat, p_val = stats.ttest_ind(sig_ret, all_ret, equal_var=False)
+        _, p_val = stats.ttest_ind(sig_ret, all_ret, equal_var=False)
 
         rows.append({
-            "horizon_days": h,
-            "n_samples": int(len(sig_ret)),
-            "win_rate": round(win_rate, 3),
-            "avg_return": round(avg_ret, 4),
-            "benchmark_avg_return": round(bench_avg, 4),
-            "excess_return": round(excess, 4),
-            "return_90pct_CI": (round(ci_lo, 4), round(ci_hi, 4)),
-            "p_value_vs_benchmark": round(p_val, 4),
-            "statistically_significant(p<0.05)": bool(p_val < 0.05),
+            "보유기간(일)": h,
+            "신호발생 횟수": int(len(sig_ret)),
+            "승률 (Win Rate)": f"{win_rate*100:.1f}%",
+            "전략 평균수익률": f"{avg_ret*100:.2f}%",
+            "시장 평균수익률": f"{bench_avg*100:.2f}%",
+            "초과 수익률": f"{excess*100:.2f}%",
+            "90% 신뢰구간 (CI)": f"[{ci_lo*100:.1f}%, {ci_hi*100:.1f}%]",
+            "p-value (우연성 검정)": f"{p_val:.4f}",
+            "통계적 유의성(p<0.05)": "✅ 유의함" if p_val < 0.05 else "❌ 우연일 수 있음"
         })
     return pd.DataFrame(rows)
 
-
-# ----------------------------------------------------------------------
-# 5. Walk-forward 검증 (미래 데이터 누설 방지)
-# ----------------------------------------------------------------------
-def walk_forward_validation(
-    df: pd.DataFrame,
-    threshold: float = 95.0,
-    horizon: int = 20,
-    n_folds: int = 5,
-) -> pd.DataFrame:
-    """
-    데이터를 시간순으로 n_folds 구간으로 나눠, 각 구간을 '검증 구간'으로 사용.
-    이전 구간에서 관찰된 패턴이 다음 구간에서도 유지되는지 확인 (과적합 점검).
-    """
+def walk_forward_validation(df: pd.DataFrame, threshold: float, horizon=20, n_folds=5):
     col = f"fwd_ret_{horizon}d"
     valid = df.dropna(subset=[col, "Disparity"]).copy()
     fold_size = len(valid) // n_folds
     results = []
     for i in range(n_folds):
-        start = i * fold_size
-        end = (i + 1) * fold_size if i < n_folds - 1 else len(valid)
+        start, end = i * fold_size, (i + 1) * fold_size if i < n_folds - 1 else len(valid)
         fold = valid.iloc[start:end]
         sig = fold.loc[fold["Disparity"] < threshold, col]
         bench = fold[col]
         if len(sig) < 5:
-            results.append({"fold": i + 1, "period": f"{fold.index[0].date()}~{fold.index[-1].date()}",
-                             "n_signal": len(sig), "win_rate": None, "avg_return": None})
+            results.append({"구간 (Fold)": i + 1, "테스트 기간": f"{fold.index[0].date()} ~ {fold.index[-1].date()}", "신호 횟수": len(sig), "전략 승률": "-", "전략 수익률": "-"})
             continue
         results.append({
-            "fold": i + 1,
-            "period": f"{fold.index[0].date()}~{fold.index[-1].date()}",
-            "n_signal": int(len(sig)),
-            "win_rate": round((sig > 0).mean(), 3),
-            "avg_return": round(sig.mean(), 4),
-            "benchmark_avg": round(bench.mean(), 4),
+            "구간 (Fold)": i + 1,
+            "테스트 기간": f"{fold.index[0].date()} ~ {fold.index[-1].date()}",
+            "신호 횟수": int(len(sig)),
+            "전략 승률": f"{(sig > 0).mean()*100:.1f}%",
+            "전략 수익률": f"{sig.mean()*100:.2f}%",
+            "시장 수익률": f"{bench.mean()*100:.2f}%"
         })
     return pd.DataFrame(results)
 
-
-# ----------------------------------------------------------------------
-# 6. 임의 상수 대신 데이터 기반 계수 추정 (로지스틱 회귀)
-# ----------------------------------------------------------------------
-def fit_rebound_probability_model(
-    df: pd.DataFrame, horizon: int = 20, test_size: float = 0.3
-):
-    """
-    기존 앱: Rebound Energy = 임의 상수들의 선형합 (근거 없음)
-    개선안: '이격도, 변동성, 거래량 이상치'로 'N일 내 반등 확률'을 로지스틱 회귀로 직접 추정.
-    """
+def fit_rebound_probability_model(df: pd.DataFrame, horizon=20, test_size=0.3):
     feat_cols = ["Disparity", "Volatility20", "VolumeZ"]
     target_col = f"fwd_win_{horizon}d"
     data = df.dropna(subset=feat_cols + [target_col]).copy()
-
     split_idx = int(len(data) * (1 - test_size))
     train, test = data.iloc[:split_idx], data.iloc[split_idx:]
-
+    
     scaler = StandardScaler()
     X_train = scaler.fit_transform(train[feat_cols])
     X_test = scaler.transform(test[feat_cols])
-    y_train, y_test = train[target_col], test[target_col]
-
+    
     model = LogisticRegression()
-    model.fit(X_train, y_train)
-
-    train_acc = model.score(X_train, y_train)
-    test_acc = model.score(X_test, y_test)
-    baseline_acc = max(y_test.mean(), 1 - y_test.mean())
-
-    coef_report = dict(zip(feat_cols, model.coef_[0].round(4)))
-
+    model.fit(X_train, train[target_col])
+    
     return {
-        "features": feat_cols,
-        "coefficients(표준화된 스케일)": coef_report,
-        "train_accuracy": round(train_acc, 3),
-        "test_accuracy(out-of-sample)": round(test_acc, 3),
-        "naive_baseline_accuracy": round(baseline_acc, 3),
-        "beats_naive_baseline": bool(test_acc > baseline_acc),
-        "train_period": f"{train.index[0].date()} ~ {train.index[-1].date()}",
-        "test_period": f"{test.index[0].date()} ~ {test.index[-1].date()}",
+        "coef": dict(zip(["이격도 (Disparity)", "20일 변동성 (Volatility)", "거래량 이상치 (Volume Z-score)"], model.coef_[0].round(4))),
+        "train_acc": model.score(X_train, train[target_col]),
+        "test_acc": model.score(X_test, test[target_col]),
+        "baseline_acc": max(test[target_col].mean(), 1 - test[target_col].mean()),
+        "train_p": f"{train.index[0].date()}~{train.index[-1].date()}",
+        "test_p": f"{test.index[0].date()}~{test.index[-1].date()}"
     }
 
+# ----------------------------------------------------------------------
+# [프론트엔드] 2. 사이트 메뉴 및 레이아웃 구성
+# ----------------------------------------------------------------------
+
+# 상단 웹사이트 타이틀 바 
+st.markdown("""
+    <div style="background-color:#1E293B; padding:20px; border-radius:10px; margin-bottom:25px;">
+        <h1 style="color:white; margin:0; font-size:28px;">📊 이격도 기반 통계적 검증 및 퀀트 플랫폼</h1>
+        <p style="color:#94A3B8; margin:5px 0 0 0; font-size:14px;">데이터 사이언스 기반으로 가짜 반등 신호와 진정한 알파를 구별합니다.</p>
+    </div>
+""", unsafe_allow_html=True)
+
+# 메인 네비게이션 탭 (홈페이지 메뉴 구조)
+menu_tab1, menu_tab2, menu_tab3 = st.tabs(["🎯 실시간 대시보드", "📚 분석 원리 및 근거", "📖 시스템 사용 설명서"])
+
+# 사이드바 제어판 (전역 설정)
+st.sidebar.markdown("### ⚙️ 전략 시뮬레이션 설정")
+data_mode = st.sidebar.selectbox("💾 데이터 소스", ["합성 데이터 (검증용)", "국내 주식 (실거래 데이터)"])
+input_threshold = st.sidebar.slider("📉 이격도 매수 임계값 (%)", min_value=85.0, max_value=100.0, value=95.0, step=0.5)
+
+if data_mode == "국내 주식 (실거래 데이터)":
+    ticker_code = st.sidebar.text_input("📌 종목코드 입력 (6자리)", value="005930")
+    start_date = st.sidebar.text_input("📅 분석 시작년도", value="2015-01-01")
+    execute_button = st.sidebar.button("🚀 데이터 분석 실행", use_container_width=True)
+else:
+    ticker_code, start_date = None, "2015-01-01"
+    execute_button = True
+
+# 데이터 로드 프로세스
+if data_mode == "국내 주식 (실거래 데이터)" and ticker_code:
+    try:
+        raw_df = load_price_data(ticker_code, start_date, None)
+        is_data_loaded = True
+    except Exception:
+        st.sidebar.error("⚠️ 종목코드를 확인해 주세요. (예: 삼성전자 005930)")
+        is_data_loaded = False
+else:
+    raw_df = generate_synthetic_data()
+    is_data_loaded = True
 
 # ----------------------------------------------------------------------
-# 7. Streamlit 대시보드 화면 구성 구현
+# 메뉴 1: 실시간 대시보드 화면
 # ----------------------------------------------------------------------
-def run_full_analysis_streamlit(ticker: str = None, start="2015-01-01", end=None, threshold=95.0):
-    st.title("📈 이격도 기반 주가 반등 전략 검증")
-    
-    if ticker:
-        st.subheader(f"🔍 분석 대상: {ticker} (기간: {start} ~ {end or '오늘'})")
-        df = load_price_data(ticker, start, end)
-    else:
-        st.subheader("🤖 검증용 합성 데이터 분석 모드")
-        df = generate_synthetic_data()
-
-    df = compute_indicators(df)
-    df = add_forward_returns(df)
-
-    st.info(f"📊 **총 관측 데이터:** {len(df)}일 (이동평균 산출을 위한 초기 20일 제외)")
-
-    # [1] 임계값 전략 백테스트
-    st.markdown("### 1️⃣ 이격도 임계값 미만 진호의 실제 성과")
-    st.caption("벤치마크(전체 기간 평균 수익률) 대비 초과수익 및 t-test 유의성 검정 결과")
-    bt = backtest_threshold_strategy(df, threshold=threshold)
-    st.dataframe(bt, use_container_width=True)
-
-    # [2] Walk-forward 검증
-    st.markdown("### 2️⃣ 시계열 구조 Walk-forward 검증")
-    st.caption("과적합을 방지하기 위해 데이터를 순차적 구간으로 나누어 패턴의 영속성 확인 (20일 보유 기준)")
-    wf = walk_forward_validation(df, threshold=threshold, horizon=20, n_folds=5)
-    st.dataframe(wf, use_container_width=True)
-
-    # [3] 로지스틱 회귀
-    st.markdown("### 3️⃣ 데이터 기반 반등 확률 추정 모형 (로지스틱 회귀)")
-    st.caption("임의 상수를 배제하고 이격도, 변동성, 거래량 Z-Score 변수를 바탕으로 머신러닝 학습 수행")
-    model_report = fit_rebound_probability_model(df, horizon=20)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**📊 평가 메트릭**")
-        st.write(f"- 학습 정확도 (Train Accuracy): `{model_report['train_accuracy']}`")
-        st.write(f"- 검증 정확도 (Test Accuracy): `{model_report['test_accuracy(out-of-sample)']}`")
-        st.write(f"- 기준 정확도 (Baseline Accuracy): `{model_report['naive_baseline_accuracy']}`")
-        st.write(f"- 기준 모델 대비 우수 여부: `{'✅ 통과' if model_report['beats_naive_baseline'] else '❌ 미달'}`")
-    
-    with col2:
-        st.markdown("**📐 표준화 계수 (Coefficients)**")
-        for feat, coef in model_report["coefficients(표준화된 스케일)"].items():
-            st.write(f"- `{feat}`: `{coef}`")
-            
-    st.caption(f"📅 학습 기간: {model_report['train_period']} / 검증 기간: {model_report['test_period']}")
-
-    # 오해 소지 방지를 위한 안내 문구
-    st.warning("""
-    **⚠️ 통계 해석 시 유의사항**
-    - `win_rate`나 평균수익률이 벤치마크보다 높게 관측되더라도, `p_value >= 0.05`라면 우연에 의한 결과일 확률을 배제할 수 없습니다.
-    - `test_accuracy`가 `naive_baseline`보다 낮은 경우, 단순히 무조건 상승 혹은 무조건 하락으로 찍는 기본 모델보다 성능이 떨어짐을 의미합니다.
-    - 신뢰구간(CI)의 범위가 지나치게 넓다면 과거 변동성이 매우 컸던 것이므로 확정적인 기대치를 신뢰해서는 안 됩니다.
-    """)
-
-
-if __name__ == "__main__":
-    # 스트림릿 사이드바 제어 패널
-    st.sidebar.header("🕹️ 제어 패널")
-    data_mode = st.sidebar.selectbox("데이터 소스 선택", ["합성 데이터 (테스트용)", "국내 주식 시장 (실거래 데이터)"])
-    
-    input_threshold = st.sidebar.slider("이격도 매수 임계값 (%)", min_value=85.0, max_value=100.0, value=95.0, step=0.5)
-    
-    if data_mode == "합성 데이터 (테스트용)":
-        run_full_analysis_streamlit(threshold=input_threshold)
-    else:
-        ticker_code = st.sidebar.text_input("종목코드 입력 (6자리)", value="005930")
-        start_date = st.sidebar.text_input("조회 시작일", value="2015-01-01")
+with menu_tab1:
+    if is_data_loaded and execute_button:
+        processed_df = compute_indicators(raw_df)
+        processed_df = add_forward_returns(processed_df)
         
-        if st.sidebar.button("분석 실행"):
-            run_full_analysis_streamlit(ticker=ticker_code, start=start_date, threshold=input_threshold)
-        else:
-            st.info("👈 왼쪽 패널에서 종목코드 확인 후 [분석 실행] 버튼을 눌러주세요.")
+        # 핵심 요약 지표 (Metrics Row)
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("총 분석 일수", f"{len(processed_df)} 일")
+        with m2:
+            current_disparity = processed_df['Disparity'].iloc[-1]
+            st.metric("최근 이격도 (20MA)", f"{current_disparity:.2f}%")
+        with m3:
+            total_signals = (processed_df['Disparity'] < input_threshold).sum()
+            st.metric("역사적 신호 발생 횟수", f"{total_signals} 번")
+            
+        st.markdown("---")
+        
+        # 분석 테이블 세션
+        st.markdown(f"#### 1. {input_threshold}% 미만 진입 시 보유기간별 기대 성과")
+        bt_res = backtest_threshold_strategy(processed_df, input_threshold)
+        st.dataframe(bt_res, use_container_width=True, hide_index=True)
+        
+        col_left, col_right = st.columns(2)
+        
+        with col_left:
+            st.markdown("#### 2. 과적합 방지 Walk-forward 구간 검증")
+            wf_res = walk_forward_validation(processed_df, input_threshold)
+            st.dataframe(wf_res, use_container_width=True, hide_index=True)
+            
+        with col_right:
+            st.markdown("#### 3. 머신러닝 기반 반등 유효성 추정")
+            model_res = fit_rebound_probability_model(processed_df)
+            
+            st.markdown(f"**🤖 아웃샘플 예측 검증 결과**")
+            st.write(f"- 알고리즘 예측 정확도: `{model_res['test_acc']*100:.1f}%` *(기준선: {model_res['baseline_acc']*100:.1f}%)*")
+            st.write(f"- 모델 신뢰 수준 판정: `{'✅ 통계적 우위 확보' if model_res['test_acc'] > model_res['baseline_acc'] else '❌ 우연에 의한 수익 모델'}`")
+            
+            st.markdown("**📐 각 지표별 가중치(표준화 계수)**")
+            for f, c in model_res["coef"].items():
+                st.write(f"- **{f}**: `{c}`")
+    else:
+        st.info("👈 왼쪽 패널에서 실거래 데이터 설정을 완료한 후 [데이터 분석 실행] 버튼을 눌러주세요.")
+
+# ----------------------------------------------------------------------
+# 메뉴 2: 분석 원리 및 근거 설명 화면
+# ----------------------------------------------------------------------
+with menu_tab2:
+    st.markdown("### 📊 왜 '감'이 아닌 '통계적 검증'이 필요한가?")
+    
+    st.markdown("""
+    많은 투자자들이 **"많이 떨어졌으니 이제 반등하겠지"**라는 막연한 기대감이나 임의로 만든 지표 점수(예: Rebound Energy 공식 등)를 맹신하여 시장에 뛰어듭니다.
+    그러나 이는 극심한 과적합(Overfitting)과 생존 편향을 낳아 자산을 잃게 만드는 주원인이 됩니다.
+    
+    본 플랫폼은 전략의 신뢰도를 **수학적**으로 판별하기 위해 아래 3가지 검증 원리를 사용합니다.
+    """)
+    
+    # 세부 원리 카드 형태 배치
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("""
+        <div style="background-color:#F8FAFC; padding:15px; border-radius:8px; border-left:5px solid #3B82F6; min-height:220px;">
+            <h4 style="color:#1E293B; margin-top:0;">① 독립표본 t-test (우연성 검정)</h4>
+            <p style="color:#475569; font-size:13px;">이격도가 낮을 때 진입한 전략의 수익률이, 시장 전체의 무작위 평균 수익률과 확실하게 차이가 나는지 검증합니다.</p>
+            <p style="color:#2563EB; font-size:12px;"><b>p-value < 0.05</b> 일 때만 운이 아닌 실력(알파)으로 인정합니다.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c2:
+        st.markdown("""
+        <div style="background-color:#F8FAFC; padding:15px; border-radius:8px; border-left:5px solid #10B981; min-height:220px;">
+            <h4 style="color:#1E293B; margin-top:0;">② 부트스트랩 신뢰구간 (CI)</h4>
+            <p style="color:#475569; font-size:13px;">"20일 뒤 5% 오른다" 같은 단일 점 추정은 위험합니다. 과거 데이터를 3,000번 이상 무작위 복원 추출(Bootstrap)하여 수익률의 범위를 추정합니다.</p>
+            <p style="color:#059669; font-size:12px;"><b>하단과 상단의 범위</b>를 확인함으로써 리스크 한계를 계산할 수 있습니다.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c3:
+        st.markdown("""
+        <div style="background-color:#F8FAFC; padding:15px; border-radius:8px; border-left:5px solid #8B5CF6; min-height:220px;">
+            <h4 style="color:#1E293B; margin-top:0;">③ Walk-forward (전진 분석)</h4>
+            <p style="color:#475569; font-size:13px;">시계열 데이터를 시간 순서대로 5개 구간으로 쪼갠 뒤, 특정 시기에만 반등 패턴이 먹힌 것은 아닌지 확인합니다.</p>
+            <p style="color:#7C3AED; font-size:12px;">모든 구간에서 승률과 수익률이 <b>일관성 있게 유지되는지</b>가 핵심입니다.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    
+
+# ----------------------------------------------------------------------
+# 메뉴 3: 시스템 사용 설명서 화면
+# ----------------------------------------------------------------------
+with menu_tab3:
+    st.markdown("### 📖 플랫폼 이용 가이드")
+    
+    st.markdown("""
+    본 플랫폼을 통해 관심 종목의 매수 전략을 검증하는 순서는 다음과 같습니다.
+    
+    #### 1단계 : 분석 대상 세팅 (좌측 패널)
+    * **데이터 소스 선택**: 
+        * 시스템이 잘 작동하는지 보려면 `합성 데이터`를 선택하세요.
+        * 실제 종목을 분석하려면 `국내 주식`을 선택하세요.
+    * **이격도 매수 임계값**: 일반적으로 20일 이동평균선 기준 하단으로 크게 이탈하는 기준점(예: 95% 이하, 92% 이하 등)을 설정합니다.
+    * **종목코드 입력**: 국내 주식은 6자리 표준 코드(예: 삼성전자 `005930`, SK하이닉스 `000660`)를 입력하고 **[🚀 데이터 분석 실행]** 버튼을 누릅니다.
+    
+    #### 2단계 : 검증 지표 판독법 (실시간 대시보드 탭)
+    1. **`통계적 유의성` 열 확인**: 가장 중요합니다. `✅ 유의함`이 떠야 우연히 오른 게 아니라는 뜻입니다. 만약 `❌ 우연일 수 있음`이 뜬다면 과거 성적이 좋았더라도 앞으로는 안 맞을 확률이 높으니 투자 대상에서 제외하십시오.
+    2. **`90% 신뢰구간` 열 확인**: 하단 수치가 지나치게 마이너스(`-5%` 이하)로 내려간다면 반등하기 전에 지옥을 맛볼 수 있다는 뜻이므로, 투자 비중을 대폭 낮춰야 합니다.
+    3. **`알고리즘 예측 정확도` 확인**: 이 값은 하단의 `기준 정확도`보다 높아야만 모델로서 가치가 있습니다. 만약 낮다면 이격도 외에 거래량이나 변동성이 반등을 전혀 예측하지 못하고 있음을 뜻합니다.
+    """)
+    st.success("💡 **핵심 요약:** 통계적 유의성이 확보되고(p<0.05), 신뢰구간 하단이 감당 가능한 수준이며, 전진 분석(Walk-forward) 결과가 일관된 전략만을 실제 트레이딩에 채택하십시오.")
