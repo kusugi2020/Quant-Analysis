@@ -1,4 +1,6 @@
-"""
+# 코드 최상단에 추가
+import streamlit as st
+
 이격도(Disparity) 기반 주가 반등 전략 — 통계적 검증 프레임워크
 ================================================================
 
@@ -228,49 +230,55 @@ def fit_rebound_probability_model(
 
 
 # ----------------------------------------------------------------------
-# 7. 실행 예시
+# 7. Streamlit 실행 및 시각화 화면 구성
 # ----------------------------------------------------------------------
-def run_full_analysis(ticker: str = None, start="2015-01-01", end=None, threshold=95.0):
-    print("=" * 70)
+def run_full_analysis_streamlit(ticker: str = None, start="2015-01-01", end=None, threshold=95.0):
+    st.title("📈 이격도 기반 주가 반등 전략 검증")
+    
     if ticker:
-        print(f"종목: {ticker}  기간: {start} ~ {end or '오늘'}")
+        st.subheader(f"🔍 종목: {ticker} (기간: {start} ~ {end or '오늘'})")
         df = load_price_data(ticker, start, end)
     else:
-        print("[검증용 합성 데이터 사용 — 실제 종목 분석 시 ticker 인자 지정]")
+        st.subheader("🤖 검증용 합성 데이터 분석")
         df = generate_synthetic_data()
-    print("=" * 70)
 
     df = compute_indicators(df)
     df = add_forward_returns(df)
 
-    print(f"\n총 관측일수: {len(df)}일 (이동평균 계산으로 앞 20일 제외)")
+    st.info(f"**총 관측일수:** {len(df)}일 (이동평균 계산으로 앞 20일 제외)")
 
-    print(f"\n[1] 이격도 {threshold}% 미만 신호의 실제 성과 (벤치마크 대비 유의성 검정)")
+    # [1] 임계값 전략 백테스트 결과
+    st.markdown("### [1] 이격도 미만 신호의 실제 성과 (벤치마크 대비 유의성 검정)")
     bt = backtest_threshold_strategy(df, threshold=threshold)
-    print(bt.to_string(index=False))
+    st.dataframe(bt) # 웹 화면에 깔끔한 테이블로 출력
 
-    print(f"\n[2] Walk-forward 검증 (20일 보유 기준, 5개 구간) — 시기별로 패턴이 유지되는지 확인")
+    # [2] Walk-forward 검증 결과
+    st.markdown("### [2] Walk-forward 검증 (20일 보유 기준, 5개 구간)")
     wf = walk_forward_validation(df, threshold=threshold, horizon=20, n_folds=5)
-    print(wf.to_string(index=False))
+    st.dataframe(wf)
 
-    print(f"\n[3] 로지스틱 회귀 기반 반등확률 모형 (임의 상수 대신 데이터로 계수 추정)")
+    # [3] 로지스틱 회귀 리포트
+    st.markdown("### [3] 로지스틱 회귀 기반 반등확률 모형 결과")
     model_report = fit_rebound_probability_model(df, horizon=20)
+    
     for k, v in model_report.items():
-        print(f"  - {k}: {v}")
+        st.write(f"- **{k}**: {v}")
 
-    print("\n" + "=" * 70)
-    print("해석 시 주의:")
-    print("- win_rate/평균수익률이 벤치마크보다 높아도 p_value >= 0.05면 우연일 가능성 배제 못함")
-    print("- test_accuracy가 naive_baseline보다 낮으면, 모형이 '무조건 다수쪽 예측'만도 못한 것")
-    print("- 신뢰구간이 넓으면(표본 부족/변동성 큼) 확정적 숫자로 제시하면 안 됨")
-    print("=" * 70)
-
-    return {"backtest": bt, "walk_forward": wf, "model": model_report}
-
+    # 주의사항 경고창
+    st.warning("""
+    **⚠️ 해석 시 주의 사항**
+    - `win_rate`나 평균수익률이 벤치마크보다 높아도 `p_value >= 0.05`면 우연일 가능성을 배제할 수 없습니다.
+    - `test_accuracy`가 `naive_baseline`보다 낮으면 모형의 예측 가치가 없는 상태입니다.
+    - 신뢰구간(CI)이 너무 넓다면 확정적인 숫자로 맹신해서는 안 됩니다.
+    """)
 
 if __name__ == "__main__":
-    # 예시 1: 합성 데이터로 로직 검증
-    run_full_analysis()
-
-    # 예시 2: 실제 종목 분석 (FinanceDataReader 설치 후 주석 해제)
-    # run_full_analysis(ticker="005930", start="2015-01-01", threshold=95.0)  # 삼성전자
+    # 사이드바에서 모드 선택 가능하도록 간단한 UI 추가
+    st.sidebar.header("설정")
+    mode = st.sidebar.radio("데이터 선택", ["합성 데이터 테스트", "실제 종목 분석(삼성전자)"])
+    
+    if mode == "합성 데이터 테스트":
+        run_full_analysis_streamlit()
+    else:
+        # FinanceDataReader가 정상 설치되어 있어야 작동합니다.
+        run_full_analysis_streamlit(ticker="005930", start="2015-01-01", threshold=95.0)
