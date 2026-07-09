@@ -1,1 +1,5 @@
-openai
+FinanceDataReader
+pandas
+numpy
+scipy
+scikit-learn
