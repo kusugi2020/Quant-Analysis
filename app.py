@@ -1,7 +1,7 @@
 """
 이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-리뉴얼 포인트: 이격도 설명 탭 하단 신호등 기준 추가 및 메뉴3 사용방법 세션 정밀 고도화
+리뉴얼 포인트: 사이드바 [분석 시작하기] 버튼 하단에 필수 면책 조항 안내 박스 전격 장착
 """
 
 import streamlit as st
@@ -158,6 +158,16 @@ start_date = st.sidebar.text_input("📅 3. 조회 시작일", value="2015-01-01
 st.sidebar.caption("💡 **조회시작일이란?** 언제부터의 데이터까지 계산에 포함시킬 것인지 정해보세요")
 execute_button = st.sidebar.button("🚀 분석 시작하기", use_container_width=True)
 
+# 💡 요청사항 반영: 분석 시작하기 버튼 바로 아래에 매끄러운 커스텀 박스 형태로 안내문 전격 삽입
+st.sidebar.markdown("""
+    <div style="background-color:#1E293B; padding:14px; border-radius:8px; border-left: 4px solid #EF4444; margin-top:12px;">
+        <div style="color:#F8FAFC; font-size:13px; font-weight:700; margin-bottom:5px;">⚠️ 필독 안내</div>
+        <div style="color:#CBD5E1; font-size:12px; line-height:1.5;">
+            본 사이트는 투자권유 또는 종목추천을 하지 않으며 투자 시 보조 지표로서의 기능만 제공하므로 모든 투자의 책임은 사용자에게 있습니다.
+        </div>
+    </div>
+""", unsafe_allow_html=True)
+
 # 데이터 로딩 실행부
 try:
     raw_df = load_price_data(ticker_code, start_date, None)
@@ -221,14 +231,14 @@ with menu_tab1:
             * **현재 종목 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
             """)
             
-        # 💡 요청사항 반영: 이격도 설명 박스 바로 하단에 결과 제시 신호등 3종류 및 조건 기준 설명 완벽 결합
+        # 결과 제시 신호등 3종류 설명 가이드 박스
         st.markdown(f"""
             <div style="background-color:#1E293B; padding:18px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:5px; margin-bottom:20px;">
                 <div style="color:#F8FAFC; font-size:16px; font-weight:700; margin-bottom:8px;">🚦 결과 제시 계기판: 신호등 3종 종류 및 판정 기준 해설</div>
                 <div style="color:#CBD5E1; font-size:14px; line-height:1.6;">
                     대시보드 최상단 판단등은 아래의 기계적 계량 수식 필터링을 거쳐 3가지 색상 중 하나로 최종 산출됩니다.<br>
                     • <b>🟢 [ 적극 매수 가능 자리 ] :</b> 주가가 내 조건선 밑에 도달했으며, 과거 데이터 백테스트 검증 결과 이 자리에서의 반등 에너지가 단순한 무작위 노이즈가 아닌 <b>'수학적 법칙(t-test 유의성 통과)'</b>에 가깝다는 최고 등급 신호입니다.<br>
-                    • <b>⚠️ [ 하락했으나 매수 보류 (함정 위험) ] :</b> 가격은 내 조건선보다 낮아져서 얼핏 저렴해 보이지만, 과거 백테스트 결과 이 자리에서 샀을 때의 반등 확률이 <b>'단순히 장세가 좋았던 운(p-value 미달)'</b>이었을 확률이 높아 진입하면 물리게 되는 함정 신호입니다.<br>
+                    • <b>⚠️ [ 하락했으나 매수 보류 (함정 위험) ] :</b> 가격은 내 조건선보다 낮아져서 얼핏 저렴해 보이지만, 과거 백테스트 결과 이 자리에서 샀을 때의 반등 확률이 <b>'단순히 장세가 좋았던 운(p-value 미달)'</b>이었을 확률이 높으니 매수를 유보해야 하는 함정 구간입니다.<br>
                     • <b>🛑 [ 관망 및 매수 대기 ] :</b> 현재 주가가 사용자가 사이드바 패널에서 직접 공언한 '낙폭과대 매수 기준선'보다 아직 위에 머물러 있으므로 현금을 쥐고 참아야 하는 대기 신호입니다.<br>
                     • <b>🔬 핵심 판단 기준:</b> 1차로 <b>현재 이격도 수준</b>이 임계치 미만인지 파악한 뒤, 2차로 컴퓨터가 금융공학 검정(독립표본 t-test)을 연산하여 시장 기대치 대비 <b>초과수익의 우연성(p-value &lt; 0.05)</b>을 판별하여 신뢰도를 기계적으로 가려냅니다.
                 </div>
@@ -261,7 +271,7 @@ with menu_tab1:
         }, index=chart_data.index)
         st.line_chart(disparity_chart_df, height=200, color=["#2563EB", "#EF4444", "#94A3B8"])
         
-        # 차트 표 및 영어 제목 설명 가이드 박스 (Deep Blue 스타일)
+        # 차트 표 및 영어 제목 설명 가이드 박스
         st.markdown(f"""
             <div style="background-color:#1E293B; padding:18px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:10px; margin-bottom:20px;">
                 <div style="color:#F8FAFC; font-size:18px; font-weight:700; margin-bottom:8px;">💡 차트 읽는 법 및 마우스 오버 표 해설 (영어 제목 안내)</div>
@@ -282,7 +292,7 @@ with menu_tab1:
             display_bt[c] = display_bt[c].apply(lambda x: f"{x}%")
         st.dataframe(display_bt[["보유기간", "신호발생", "승률", "전략수익률", "시장수익률", "초과수익률", "판정"]], use_container_width=True, hide_index=True)
         
-        # 1단계 성과 분석 표 가이드 설명 박스 (Deep Blue 스타일)
+        # 1단계 성과 분석 표 가이드 설명 박스
         st.markdown(f"""
             <div style="background-color:#1E293B; padding:20px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:10px; margin-bottom:25px;">
                 <div style="color:#F8FAFC; font-size:18px; font-weight:700; margin-bottom:10px;">👀 1단계 분석 성과 표, 쉽게 이해하기</div>
@@ -335,7 +345,7 @@ with menu_tab1:
             for feat, val in model_res["coef"].items():
                 st.write(f"- {feat}: **{val}**")
                 
-        # 최하단 AI 가중치 해설 세션 (Deep Blue 스타일)
+        # 최하단 AI 가중치 해설 세션
         st.markdown("")
         st.markdown(f"""
             <div style="background-color:#1E293B; padding:20px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:10px; margin-bottom:15px;">
@@ -389,7 +399,6 @@ with menu_tab3:
     st.write("통계 계기판을 보고 실제 매매 시나리오를 짜고 자금을 관리하는 프로들의 투자 워크플로우입니다.")
     st.markdown("---")
     
-    # 💡 요청사항 반영: 메뉴3 내부 설명 디자인 통일 및 결과판정 로직을 포함한 고도화 가이드 탑재
     st.markdown("#### 🕹️ 1단계: 분석 조건 설정 및 데이터 탐색")
     st.markdown("""
     1. 왼쪽 패널에서 가치 분석을 진행할 **[1. 종목코드 6자리]**를 입력합니다.
@@ -400,12 +409,11 @@ with menu_tab3:
     st.markdown("---")
     st.markdown("#### 🚦 2단계: 오늘의 투자 최종 신호등 판정 해석법")
     
-    # 차트와 완벽히 동일한 체계의 Deep Blue 박스로 사용법 고도화 개편
     st.markdown(f"""
         <div style="background-color:#1E293B; padding:20px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:5px; margin-bottom:20px;">
             <div style="color:#F8FAFC; font-size:18px; font-weight:700; margin-bottom:10px;">📢 대시보드 최종 판정 결과 및 기준 완전 정복</div>
             <div style="color:#CBD5E1; font-size:14px; line-height:1.6;">
-                분석이 시작되면 AI 계기판이 다음 2가지의 결량 필터를 통해 3가지 종류의 등불을 화면에 출력합니다.<br><br>
+                분석가 시작되면 AI 계기판이 다음 2가지의 계량 필터를 통해 3가지 종류의 등불을 화면에 출력합니다.<br><br>
                 <b>1. 최종 판정의 3가지 종류</b><br>
                 • <b style="color:#22C55E;">🟢 [ 적극 매수 가능 자리 ] :</b> 주가가 내가 선언한 커트라인 아래에 있고, 과거 10년 데이터 백테스트 상 통계학적 반등 법칙이 실존함이 증명된 최고의 진입 타점입니다.<br>
                 • <b style="color:#F59E0B;">⚠️ [ 하락했으나 매수 보류 (함정 위험) ] :</b> 주가가 낮아져 싸 보이지만, 과거 이 자리에서 반등했던 성과가 통계적으로 신뢰할 수 없는 우연한 노이즈 장세의 운이었을 확률이 높으니 매수를 유보해야 하는 함정 구간입니다.<br>
@@ -421,9 +429,9 @@ with menu_tab3:
     st.markdown("#### 💰 3단계: 자금 관리 및 청산 켈리 규칙 (Kelly Criterion)")
     st.latex(r"f^* = \frac{b \cdot p - (1 - p)}{b}")
     st.markdown("""
-    * **리스크 대비 비중 세팅 조조 (안전벨트):**
+    * **리스크 대비 비중 세팅 (안전벨트):**
         * 1단계 표를 스캔하여 **🟢 진짜 신호**가 켜져 있고, 2단계 리스크 차트의 **[최악의 경우(손실 하단)]**가 **-2% 이내**로 손실 방어력이 우수함이 검증되면 총 자산의 **10~15%** 내외를 진입합니다.
         * 만약 판정등은 초록불이나 **[최악의 경우]** 최대 낙폭 기대치가 **-5% 이상**으로 깊다면, 자산의 **3% 미만**으로 쪼개어 철저히 분할 진입하는 것이 퀀트 매매의 정석입니다.
     * **기간 청산 규칙:** 20일 보유 기준으로 진짜 신호를 보고 진입했다면 시장의 잔파도나 심리에 휘둘리지 말고 **정확히 20거래일이 지난 날 장마감 시점에 기계적으로 전량 청산**하여 통계적 알파(초과수익)를 실현합니다.
     """)
-    st.success("🎯 **플랫폼 최종 규율:** 통계학 계기판이 지시하는 승률과 리스크 범위 내에서만 자금을 베팅하고 기계적으로 청산 규칙을 사수하는 규율이 투자의 영구적인 승패를 결정합니다.")
+    st.success("🎯 **플랫폼 최종 규율:** 통계적 하단 리스크만큼만 자금을 베팅하고 기계적으로 규칙을 지키는 '규율'이 투자의 영구적인 승패를 결정합니다.")
