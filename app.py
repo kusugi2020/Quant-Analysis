@@ -1,7 +1,7 @@
 """
 이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-리뉴얼 포인트: 부록 세션 내 인공지능 가중치(절대값/부호/상대서열) 정밀 해석 가이드 전격 장착
+리뉴얼 포인트: 최신 최종본 기준 반영 및 AI 가중치 크기/부호/상대서열 분석 바이블 가이드 장착
 """
 
 import streamlit as st
@@ -218,7 +218,7 @@ with menu_tab1:
         with st.expander("💡 이격도 설명", expanded=True):
             st.markdown(f"""
             * **이격도 설정:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, 최근 20일 평균 가격선 대비 **-{100-input_threshold:.1f}% 이상 급락한 지점**에서만 진입하겠다는 의미입니다.
-            * **최근 이격도 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
+            * **현재 종목 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
             """)
         
         st.markdown("---")
@@ -231,10 +231,14 @@ with menu_tab1:
             
         st.markdown("---")
         
-        # 메인 시각화 그래프 구간
+        # 메인 시각화 그래프 구간 버그 픽스 (축 분리 대응)
         st.markdown("### 📊 최근 주가 추이와 이격도 흐름")
-        chart_data = processed_df.tail(250)[["Close", "MA", "Disparity"]]
-        st.line_chart(chart_data[["Close", "MA"]], height=250)
+        chart_data = processed_df.tail(250).copy()
+        price_chart_df = pd.DataFrame({
+            "실제 주가 (Close)": chart_data["Close"],
+            "20일 이동평균선 (MA)": chart_data["MA"]
+        }, index=chart_data.index)
+        st.line_chart(price_chart_df, height=250)
         st.line_chart(chart_data["Disparity"], height=120)
         
         st.markdown("---")
@@ -243,64 +247,4 @@ with menu_tab1:
         st.markdown("### 🎯 1단계 분석 결과: 이 자리에 사면 내 계좌는 어떻게 될까?")
         display_bt = bt_res.copy()
         for c in ["승률", "전략수익률", "시장수익률", "초과수익률"]:
-            display_bt[c] = display_bt[c].apply(lambda x: f"{x}%")
-        st.dataframe(display_bt[["보유기간", "신호발생", "승률", "전략수익률", "시장수익률", "초과수익률", "판정"]], use_container_width=True, hide_index=True)
-        
-        st.markdown("#### 📈 무작위로 살 때 vs 과매도 신호에 살 때 수익률 비교 그래프 (%)")
-        graph_df = pd.DataFrame({
-            "시장 그냥 보유 시 수익률 (%)": bt_res["시장수익률"].values,
-            "이격도 과매도 전략 수익률 (%)": bt_res["전략수익률"].values
-        }, index=bt_res["보유기간"])
-        st.bar_chart(graph_df)
-
-        st.markdown("---")
-        
-        # 리스크 관리 차트 및 과거 영속성 검증
-        col_chart1, col_chart2 = st.columns(2)
-        with col_chart1:
-            st.markdown("### 🛡️ 2단계 분석 결과: 물리더라도 얼마나 깨질까? 리스크 범위 (%)")
-            ci_graph_df = pd.DataFrame({
-                "최악의 손실 하단 (%)": bt_res["최악의경우"].values,
-                "최선의 이익 상단 (%)": bt_res["최선의경우"].values
-            }, index=bt_res["보유기간"])
-            st.bar_chart(ci_graph_df)
-            
-        with col_chart2:
-            st.markdown("### ⏳ 3단계 분석 결과: 옛날에도 고르게 잘 먹혔을까? 구간수익률 (%)")
-            wf_res = walk_forward_validation(processed_df, input_threshold)
-            st.bar_chart(wf_res.copy().rename(columns={"전략수익률": "구간별 전략수익률 (%)"}).set_index("구간"))
-            
-        # ==================================================================
-        # 🤖 부록 리포트 및 가중치 판단 기준 전격 통합
-        # ==================================================================
-        st.markdown("---")
-        st.markdown("### 🤖 부록: 인공지능(로지스틱 회귀) 모델 상세 성적표")
-        model_res = fit_rebound_probability_model(processed_df)
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**🎯 모형 예측 성적**")
-            st.write(f"- 알고리즘 예측 정확도: **{model_res['test_acc']*100:.1f}%** *(무조건 한쪽으로 찍는 기본선: {model_res['baseline_acc']*100:.1f}%)*")
-        with c2:
-            st.markdown("**📐 영향력 지표 가중치**")
-            for feat, val in model_res["coef"].items():
-                st.write(f"- {feat}: **{val}**")
-                
-        # 하단 해설 가이드 세션 보강 (수학적 원리 가이드 장착)
-        st.markdown("")
-        st.info("""
-        **💡영향력 지표 가중치란?**
-        
-        분석가의 주관을 배제하고 과거 10년 치 주가 데이터가 직접 채점한 '진짜 반등의 핵심 열쇠'입니다. 체급이 다른 지표들을 공평하게 비교하기 위해 Z-Score 표준화 변환 후 서열을 매긴 상대적 점수입니다.
-        
-        **1. 숫자의 크기 (절대값) ➡️ 영향력의 세기**
-        - 부호(+, -)를 떼고 **숫자가 0에서 멀어질수록** 반등 확률을 좌지우지하는 강력한 결정권자 지표입니다. 반대로 0에 가까우면 반등 여부에 아무 짝에도 쓸모없는 지표입니다.
-        - **예시 분석:** 만약 '20일 변동성' 가중치 절대값이 가장 크다면, 단순히 많이 떨어진 종목보다 최근 가격이 요동치며 **시장 공포감이 극에 달한 상태**일수록 튕겨 오르는 용수철 탄력이 강력함을 증명합니다.
-        
-        **2. 부호의 의미 (+ 또는 -) ➡️ 영향력의 방향**
-        - **플러스(+) 가중치:** 해당 지표의 **숫자가 커질수록** 반등 성공 확률이 수학적으로 급증함을 뜻합니다. (ex. 거래량 이상치 가중치가 플러스라면, 거래대금이 강하게 폭발할수록 고래의 매집 흔적이 뚜렷하여 반등 확률이 높아짐)
-        - **마이너스(-) 가중치:** 해당 지표의 **숫자가 작아질수록** 반등 성공 확률이 올라감을 뜻합니다. (ex. 이격도 가중치가 마이너스라면, 주가가 평균선 밑으로 깊숙이 처박혀 숫자가 낮아질수록 반등 에너지가 응축됨)
-        
-        **3. 개미들의 흔한 착각 방지**
-        - 만약 이격도 단독 가중치 점수가 0에 가깝다면, 개미들이 흔히 저지르는 '이격도가 낮으니 무조건 반등하겠지'라는 접근이 통계학적으로 함정 카드였다는 방증입니다. 반드시 영향력 세기가 큰 1순위, 2순위 지표 조건들이 삼박자로 결합해야 진짜 타점이 됩니다.
-        """)
+            display_bt[c] = display
