@@ -254,7 +254,7 @@ with menu_tab1:
                 <div style="color:#CBD5E1; font-size:14px; line-height:1.6;">
                     파란색 이격도가 <b>빨간색 기준선({input_threshold}%)</b> 밑으로 떨어질 때가 과거 데이터 분석 대상이 되는 과매도 진입 시점입니다.<br>
                     ※ 그래프에 마우스를 올릴 때 노출되는 영어 필드명은 데이터 매칭을 위한 정상 문구입니다. 
-                    <b>Date</b>는 거래 날짜, <b>color</b>는 주가/이동평균선 종류, <b>value</b>는 실제 가격(원)을 뜻하오니 분석에 참고하시기 바랍니다.
+                    <b>Date</b>는 거래 날짜, <b>color</b>는 주가/이동평균선 종류, <b>value</b>는 종가가 아니라 '최근 20일간의 주가를 모두 더해서 20으로 나눈 이동평균선 가격'을 뜻하오니 분석에 참고하시기 바랍니다.
                 </div>
             </div>
         """, unsafe_allow_html=True)
