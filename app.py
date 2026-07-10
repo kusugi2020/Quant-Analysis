@@ -1,7 +1,7 @@
 """
 이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-리뉴얼 포인트: 주가 추이 차트 하단 및 1단계 성과 표 하단에 사용자 이해를 돕는 설명 문구 보강
+리뉴얼 포인트: 우측 프레임 내 설명문 디자인 통일 (파란 배경색 + 제목/내용 폰트 사이즈 차별화)
 """
 
 import streamlit as st
@@ -218,7 +218,7 @@ with menu_tab1:
         with st.expander("💡 이격도 설명", expanded=True):
             st.markdown(f"""
             * **이격도 설정:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, 최근 20일 평균 가격선 대비 **-{100-input_threshold:.1f}% 이상 급락한 지점**에서만 진입하겠다는 의미입니다.
-            * **최근 이격도 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
+            * **현재 종목 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
             """)
         
         st.markdown("---")
@@ -247,9 +247,17 @@ with menu_tab1:
         }, index=chart_data.index)
         st.line_chart(disparity_chart_df, height=200, color=["#2563EB", "#EF4444", "#94A3B8"])
         
-        # 💡 요청사항 반영: 표 영어 제목의 팝업 의미 가이드라인 추가
-        st.caption(f"💡 **차트 읽는 법 및 영어 제목 해설:** 파란색 이격도가 **빨간색 기준선({input_threshold}%)** 밑으로 떨어질 때가 과매도 진입 시점입니다.")
-        st.caption("※ 그래프 마우스 오버 시 뜨는 표의 영어 필드명은 오류가 아닙니다! `Date`는 **거래 날짜**, `color`는 **주가/이동평균선 종류**, `value`는 **실제 가격(원)**을 뜻하는 시스템 자동 생성 문구이니 안심하고 확인하세요.")
+        # 💡 디자인 리뉴얼: 차트 표 및 영어 제목 설명 가이드를 고급스러운 파란색 배경 상자로 변경
+        st.markdown(f"""
+            <div style="background-color:#1E293B; padding:18px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:10px; margin-bottom:20px;">
+                <div style="color:#F8FAFC; font-size:16px; font-weight:700; margin-bottom:8px;">💡 차트 읽는 법 및 마우스 오버 표 해설 (영어 제목 안내)</div>
+                <div style="color:#CBD5E1; font-size:14px; line-height:1.6;">
+                    파란색 이격도가 <b>빨간색 기준선({input_threshold}%)</b> 밑으로 떨어질 때가 과거 데이터 분석 대상이 되는 과매도 진입 시점입니다.<br>
+                    ※ 그래프에 마우스를 올릴 때 노출되는 영어 필드명은 데이터 매칭을 위한 정상 문구입니다. 
+                    <b>Date</b>는 거래 날짜, <b>color</b>는 주가/이동평균선 종류, <b>value</b>는 실제 가격(원)을 뜻하오니 분석에 참고하시기 바랍니다.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
         
         st.markdown("---")
         
@@ -260,17 +268,21 @@ with menu_tab1:
             display_bt[c] = display_bt[c].apply(lambda x: f"{x}%")
         st.dataframe(display_bt[["보유기간", "신호발생", "승률", "전략수익률", "시장수익률", "초과수익률", "판정"]], use_container_width=True, hide_index=True)
         
-        # 💡 요청사항 반영: 1단계 분석 표 하단에 '어떻게 이해해야 하는지' 초보자용 핵심 눈높이 해설 장착
-        with st.expander("👀 <b>1단계 분석 표, 한눈에 쉽게 이해하기 (클릭)</b>", expanded=True):
-            st.markdown(f"""
-            이 표는 투자자님이 설정한 이격도 커트라인(**{input_threshold}%**) 미만으로 주가가 폭락했을 때, 과거 10년 동안 타임머신을 타고 들어가 실제로 매수했던 사람들의 성적표를 정리한 것입니다.
-            * **보유기간:** 진입 후 주식을 팔지 않고 눈감고 버틴 날짜(5일~40일)입니다.
-            * **신호발생:** 과거 10년간 투자자님과 똑같은 폭락 커트라인 조건이 만족되어 매수 찬스가 온 총 횟수입니다.
-            * **승률:** 그 자리에서 산 사람들 중 단 1원이라도 수익을 내고 탈출한 사람들의 백분율 확률입니다.
-            * **전략수익률 vs 시장수익률:** 아무 때나 무작위로 산 평범한 사람들의 성적(**시장수익률**)보다, 투자자님처럼 무섭게 폭락한 자리에서 골라 산 알파 전략가들의 성적(**전략수익률**)이 과연 얼마나 더 뛰어난지 직관적으로 비교해 줍니다.
-            * **초과수익률:** 투자자님의 똑똑한 폭락 매수 조건 덕분에 시장 평균보다 **몇 %나 추가 보너스 수익**을 챙겼는지 보여주는 핵심 지표입니다.
-            * **최종 판정:** 초록불(`🟢 진짜 신호`)이 들어온 보유기간을 고르세요. 과거 통계상 우연이 아닌 과학적인 반등 법칙이 지배하는 '돈이 되는 안전지대'라는 뜻입니다.
-            """)
+        # 💡 디자인 리뉴얼: 1단계 성과 분석 표 가이드 설명을 차트와 완벽히 일치하는 파란색 배경 상자로 변경
+        st.markdown(f"""
+            <div style="background-color:#1E293B; padding:20px; border-radius:8px; border-left: 5px solid #3B82F6; margin-top:10px; margin-bottom:25px;">
+                <div style="color:#F8FAFC; font-size:17px; font-weight:700; margin-bottom:10px;">👀 1단계 분석 성과 표, 쉽게 이해하기</div>
+                <div style="color:#CBD5E1; font-size:14px; line-height:1.6;">
+                    이 표는 투자자님이 설정한 이격도 커트라인(<b>{input_threshold}%</b>) 미만으로 주가가 폭락했을 때, 과거 10년 동안 실제로 매수했던 사람들의 백테스트 성적표입니다.<br>
+                    • <b>보유기간:</b> 진입 후 주식을 팔지 않고 기계적으로 보유한 거래일수(5일~40일)입니다.<br>
+                    • <b>신호발생:</b> 과거 10년간 투자자님이 설정한 조건과 동일한 매수 찬스가 포착된 총 횟수입니다.<br>
+                    • <b>승률:</b> 해당 자리에서 진입한 후 단 1원이라도 이익을 보고 탈출한 역사적 확률입니다.<br>
+                    • <b>전략수익률 vs 시장수익률:</b> 아무 때나 무작위로 산 평범한 결과(시장수익률)보다, 폭락 자리를 노려 산 기계적 성과(전략수익률)가 통계적으로 우월한지 대조해 줍니다.<br>
+                    • <b>초과수익률:</b> 똑똑한 진입 기준 덕분에 시장 평균 대비 <b>몇 %의 보너스 수익률</b>을 거두었는지 알려주는 핵심 알파 지표입니다.<br>
+                    • <b>최종 판정:</b> 과거 데이터 통계상 우연이 아닌 명확한 반등 법칙이 지배하는 자리에만 <b>🟢 진짜 신호</b>라는 초록불이 켜집니다.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
         
         st.markdown("#### 📈 무작위로 살 때 vs 과매도 신호에 살 때 수익률 비교 그래프 (%)")
         graph_df = pd.DataFrame({
