@@ -188,7 +188,7 @@ with menu_tab1:
                     <div style="background-color:#DCFCE7; padding:20px; border-radius:8px; border: 2px solid #22C55E;">
                         <h2 style="color:#166534; margin:0; font-size:22px;">🔥 오늘의 판정: [ 적극 매수 가능 자리 ]</h2>
                         <p style="color:#1F2937; margin:8px 0 0 0; font-size:15px;">
-                            현재 이격도가 <b>{current_disparity:.2f}%</b>로 설정하신 기준치({input_threshold}%)보다 낮아 <b>역사적인 과매도 구간</b>에 진입했습니다.<br>
+                            현재 이격도가 <b>{current_disparity:.2f}%</b>로 설정하신 기준치({input_threshold}%)보다 낮아 <b>과매도 구간</b>에 진입했습니다.<br>
                             과거 통계 검증 결과, 현재 자리에서 <b>{best_row['보유기간']}</b> 동안 보유 시 <b>승률 {best_row['승률']}% / 기대 수익률 {best_row['전략수익률']}%</b>로 성과가 우수했으며, 우연이 아님이 수학적으로 증명되었습니다.
                         </p>
                     </div>
@@ -227,7 +227,7 @@ with menu_tab1:
         m1, m2, m3 = st.columns(3)
         with m1: st.metric("🔬 검증에 사용된 총 일수", f"{len(processed_df):,} 일")
         with m2: st.metric("📉 최근 이격도 상태", f"{current_disparity:.2f}%")
-        with m3: st.metric("🚨 역사적 매수 신호 포착 횟수", f"{total_signals} 회")
+        with m3: st.metric("🚨 조회기간 내 매수 신호 포착 횟수", f"{total_signals} 회")
             
         st.markdown("---")
         
@@ -276,7 +276,7 @@ with menu_tab1:
                     이 표는 투자자님이 설정한 이격도 커트라인(<b>{input_threshold}%</b>) 미만으로 주가가 폭락했을 때, 과거 10년 동안 실제로 매수했던 사람들의 백테스트 성적표입니다.<br>
                     • <b>보유기간:</b> 진입 후 주식을 팔지 않고 기계적으로 보유한 거래일수(5일~40일)입니다.<br>
                     • <b>신호발생:</b> 과거 10년간 투자자님이 설정한 조건과 동일한 매수 찬스가 포착된 총 횟수입니다.<br>
-                    • <b>승률:</b> 해당 자리에서 진입한 후 단 1원이라도 이익을 보고 탈출한 역사적 확률입니다.<br>
+                    • <b>승률:</b> 해당 자리에서 진입한 후 단 1원이라도 이익을 보고 탈출한 조회기간 내의 확률입니다.<br>
                     • <b>전략수익률 vs 시장수익률:</b> 아무 때나 무작위로 산 평범한 결과(시장수익률)보다, 폭락 자리를 노려 산 기계적 성과(전략수익률)가 통계적으로 우월한지 대조해 줍니다.<br>
                     • <b>초과수익률:</b> 똑똑한 진입 기준 덕분에 시장 평균 대비 <b>몇 %의 보너스 수익률</b>을 거두었는지 알려주는 핵심 알파 지표입니다.<br>
                     • <b>최종 판정:</b> 과거 데이터 통계상 우연이 아닌 명확한 반등 법칙이 지배하는 자리에만 <b>🟢 진짜 신호</b>라는 초록불이 켜집니다.
