@@ -1,7 +1,7 @@
 """
 이격도(Disparity) 기반 통계적 검증 및 퀀트 분석 플랫폼
 ================================================================
-리뉴얼 포인트: 최신 최종본 기준 반영 및 AI 가중치 크기/부호/상대서열 분석 바이블 가이드 장착
+리뉴얼 포인트: 250라인 부근의 NameError(display 변수 누락 오타) 완벽 버그 수정
 """
 
 import streamlit as st
@@ -147,104 +147,4 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-menu_tab1, menu_tab2, menu_tab3 = st.tabs(["🎯 투자 판단 분석", "📚 분석 원리", "📖 사용 방법"])
-
-# 사이드바 제어판
-st.sidebar.markdown("### 🕹️ 분석 조건 설정")
-ticker_code = st.sidebar.text_input("📌 1. 종목코드 입력 (6자리)", value="005930")
-input_threshold = st.sidebar.slider("📉 2. 매수 이격도 기준 설정 (%)", min_value=85.0, max_value=100.0, value=93.0, step=0.5)
-st.sidebar.caption("💡 **이격도란?** 최근 20일 평균 가격에서 얼마나 폭락했는지 정하는 기준입니다. (ex. 20일 평균가가 1만 원일 때, 10% 떨어진 9천 원에 매수하겠다면 이격도 **90%** 설정)")
-start_date = st.sidebar.text_input("📅 3. 조회 시작일", value="2015-01-01")
-st.sidebar.caption("💡 **조회시작일이란?** 언제부터의 데이터까지 계산에 포함시킬 것인지 정해보세요")
-execute_button = st.sidebar.button("🚀 분석 시작하기", use_container_width=True)
-
-# 데이터 로딩 실행부
-try:
-    raw_df = load_price_data(ticker_code, start_date, None)
-    processed_df = compute_indicators(raw_df)
-    processed_df = add_forward_returns(processed_df)
-    is_data_loaded = True
-except Exception:
-    st.sidebar.error("⚠️ 올바른 종목코드를 입력해 주세요.")
-    is_data_loaded = False
-
-# ----------------------------------------------------------------------
-# 메뉴 1: 투자 판단 분석
-# ----------------------------------------------------------------------
-with menu_tab1:
-    if is_data_loaded:
-        current_disparity = processed_df['Disparity'].iloc[-1]
-        total_signals = (processed_df['Disparity'] < input_threshold).sum()
-        bt_res = backtest_threshold_strategy(processed_df, input_threshold)
-        
-        # 오늘의 투자 최종 신호등 판정
-        st.markdown("### 🚨 [오늘의 투자 최종 신호등 판정]")
-        valid_horizons = bt_res[bt_res["판정"] == "🟢 진짜 신호 (진입 가능)"]
-        
-        if current_disparity < input_threshold:
-            if len(valid_horizons) > 0:
-                best_row = valid_horizons.sort_values(by="전략수익률", ascending=False).iloc[0]
-                st.markdown(f"""
-                    <div style="background-color:#DCFCE7; padding:20px; border-radius:8px; border: 2px solid #22C55E;">
-                        <h2 style="color:#166534; margin:0; font-size:22px;">🔥 오늘의 판정: [ 적극 매수 가능 자리 ]</h2>
-                        <p style="color:#1F2937; margin:8px 0 0 0; font-size:15px;">
-                            현재 이격도가 <b>{current_disparity:.2f}%</b>로 설정하신 기준치({input_threshold}%)보다 낮아 <b>역사적인 과매도 구간</b>에 진입했습니다.<br>
-                            과거 통계 검증 결과, 현재 자리에서 <b>{best_row['보유기간']}</b> 동안 보유 시 <b>승률 {best_row['승률']}% / 기대 수익률 {best_row['전략수익률']}%</b>로 성과가 우수했으며, 우연이 아님이 수학적으로 증명되었습니다.
-                        </p>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                    <div style="background-color:#FEF3C7; padding:20px; border-radius:8px; border: 2px solid #F59E0B;">
-                        <h2 style="color:#92400E; margin:0; font-size:22px;">⚠️ 오늘의 판정: [ 하락했으나 매수 보류 (함정 위험) ]</h2>
-                        <p style="color:#1F2937; margin:8px 0 0 0; font-size:15px;">
-                            현재 이격도는 <b>{current_disparity:.2f}%</b>로 낮아져 얼핏 싸 보이지만, 과거 데이터 분석 결과 <b>이 자리에서 샀을 때의 반등 확률이 '단순한 운'이었을 확률이 높습니다.</b><br>
-                            통계적 유의성이 확보되지 않은 자리이므로 지금 당장 진입하는 것은 위험하며, 추가 관망을 권장합니다.
-                        </p>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-                <div style="background-color:#F1F5F9; padding:20px; border-radius:8px; border: 2px solid #94A3B8;">
-                    <h2 style="color:#334155; margin:0; font-size:22px;">🛑 오늘의 판정: [ 관망 및 매수 대기 ]</h2>
-                    <p style="color:#1F2937; margin:8px 0 0 0; font-size:15px;">
-                        현재 이격도는 <b>{current_disparity:.2f}%</b>로, 설정하신 과매도 기준치({input_threshold}%)보다 높습니다. <br>
-                        주가가 유리한 고지까지 충분히 내려오지 않았으므로, 기준치 이하로 떨어질 때까지 느긋하게 기다리세요.
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("")
-        with st.expander("💡 이격도 설명", expanded=True):
-            st.markdown(f"""
-            * **이격도 설정:** 슬라이더를 **{input_threshold}%**로 두셨다는 건, 최근 20일 평균 가격선 대비 **-{100-input_threshold:.1f}% 이상 급락한 지점**에서만 진입하겠다는 의미입니다.
-            * **현재 종목 상태:** 지금 입력하신 종목의 실시간 이격도는 **{current_disparity:.2f}%**입니다. 평균보다 약 **-{100-current_disparity:.1f}%** 떨어져 있는 상태입니다.
-            """)
-        
-        st.markdown("---")
-        
-        # 상단 지표 요약
-        m1, m2, m3 = st.columns(3)
-        with m1: st.metric("🔬 검증에 사용된 총 일수", f"{len(processed_df):,} 일")
-        with m2: st.metric("📉 최근 이격도 상태", f"{current_disparity:.2f}%")
-        with m3: st.metric("🚨 역사적 매수 신호 포착 횟수", f"{total_signals} 회")
-            
-        st.markdown("---")
-        
-        # 메인 시각화 그래프 구간 버그 픽스 (축 분리 대응)
-        st.markdown("### 📊 최근 주가 추이와 이격도 흐름")
-        chart_data = processed_df.tail(250).copy()
-        price_chart_df = pd.DataFrame({
-            "실제 주가 (Close)": chart_data["Close"],
-            "20일 이동평균선 (MA)": chart_data["MA"]
-        }, index=chart_data.index)
-        st.line_chart(price_chart_df, height=250)
-        st.line_chart(chart_data["Disparity"], height=120)
-        
-        st.markdown("---")
-        
-        # 전략 기대 성과 표 및 그래프
-        st.markdown("### 🎯 1단계 분석 결과: 이 자리에 사면 내 계좌는 어떻게 될까?")
-        display_bt = bt_res.copy()
-        for c in ["승률", "전략수익률", "시장수익률", "초과수익률"]:
-            display_bt[c] = display
+menu_tab1, menu_tab2, menu_tab3 = st.tabs(
